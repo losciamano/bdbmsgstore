@@ -95,24 +95,15 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     typedef JournalListMap::iterator JournalListMapItr;
 
     // Default store settings
-    static const u_int16_t defNumJrnlFiles = 8;
-    static const u_int32_t defJrnlFileSizePgs = 24;
     static const bool      defTruncateFlag = false;
-    static const u_int32_t defWCachePageSize = JRNL_WMGR_DEF_PAGE_SIZE * JRNL_DBLK_SIZE * JRNL_SBLK_SIZE / 1024;
-    static const u_int16_t defTplNumJrnlFiles = 8;
-    static const u_int32_t defTplJrnlFileSizePgs = 24;
-    static const u_int32_t defTplWCachePageSize = defWCachePageSize / 8;
-    // TODO: set defAutoJrnlExpand to true and defAutoJrnlExpandMaxFiles to 16 when auto-expand comes on-line
-    static const bool      defAutoJrnlExpand = false;
-    static const u_int16_t defAutoJrnlExpandMaxFiles = 0;
 
     static const std::string storeTopLevelDir;
     static qpid::sys::Duration defJournalGetEventsTimeout;
     static qpid::sys::Duration defJournalFlushTimeout;
    
-    boost::asio::io_service bdbserv;
+    /*boost::asio::io_service bdbserv;
     boost::asio::io_service::work bdbwork;
-    boost::shared_ptr<boost::thread> servThread;
+    boost::shared_ptr<boost::thread> servThread;*/
 
     std::list<db_ptr> dbs;
     dbEnv_ptr dbenv;
@@ -125,7 +116,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
 
     // Pointer to Transaction Prepared List (TPL) journal instance
     boost::shared_ptr<TplJournalImpl> tplStorePtr;
-    TplRecoverMap tplRecoverMap;
+    //TplRecoverMap tplRecoverMap;//TODO:implement transaction
     qpid::sys::Mutex tplInitLock;
     JournalListMap journalList;
     qpid::sys::Mutex journalListLock;

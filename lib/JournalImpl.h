@@ -86,15 +86,11 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     boost::intrusive_ptr<qpid::sys::TimerTask> getEventsFireEventsPtr;
     qpid::sys::Mutex _getf_lock;
 
-    u_int64_t lastReadRid; // rid of last read msg for loadMsgContent() - detects out-of-order read requests
-    std::vector<u_int64_t> oooRidList; // list of out-of-order rids (greater than current rid) encountered during read sequence
-
     bool writeActivityFlag;
     bool flushTriggeredFlag;
     boost::intrusive_ptr<qpid::sys::TimerTask> inactivityFireEventPtr;
 
     // temp local vars for loadMsgContent below
-    bool _external;
     bool _is_init;
 
     boost::shared_ptr<Db> messageDb;

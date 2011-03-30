@@ -68,20 +68,18 @@ JournalImpl::JournalImpl(qpid::sys::Timer& timer_,
 			 boost::shared_ptr<DbEnv>& de,
                          DeleteCallback onDelete)
 			 :
+                         timer(timer_),
+                         getEventsTimerSetFlag(false),
+                         writeActivityFlag(false),
+                         flushTriggeredFlag(true),
+			 _is_init(false),
+			 dbEnv(de),
 			 journalName(journalId),
 			 journalDirectory(journalDirectory),
 			 bdbDir(bdbDir),
-                         timer(timer_),
-                         getEventsTimerSetFlag(false),
-                         lastReadRid(0),
-                         writeActivityFlag(false),
-                         flushTriggeredFlag(true),
-			 dbEnv(de),
-                         _external(false),
                          _agent(a),
                          _mgmtObject(0),
-                         deleteCallback(onDelete),
-			 _is_init(false)
+                         deleteCallback(onDelete)
 {
     getEventsFireEventsPtr = new GetEventsFireEvent(this, getEventsTimeout);
     inactivityFireEventPtr = new InactivityFireEvent(this, flushTimeout);
@@ -264,7 +262,6 @@ void JournalImpl::recoverMessages(TxnCtxt& txn,std::vector< std::pair < uint64_t
 	this->init_message_db();
 	Cursor messages;
 	messages.open(messageDb, txn.get());	
-	u_int64_t maxQueueId(1);
 	IdDbt key;
     	Dbt value;
     	//read all messages
@@ -351,8 +348,8 @@ void JournalImpl::remove_msg(boost::shared_ptr<Db> db, const uint64_t pid)
     }
 }
 
-void JournalImpl::enqueue_data(char* data_buff, const size_t tot_data_len, const size_t this_data_len, 
-					uint64_t pid,const std::string& xid, const bool transient) {
+void JournalImpl::enqueue_data(char* data_buff, const size_t /*tot_data_len*/, const size_t this_data_len, 
+					uint64_t pid,const std::string&/* xid*/, const bool /*transient*/) {
 	//std::cout<<"Wow ! this is async [ENQUEUE]!"<<std::endl;
 	try {
 		Dbt msgValue(data_buff,this_data_len);
@@ -364,7 +361,7 @@ void JournalImpl::enqueue_data(char* data_buff, const size_t tot_data_len, const
 
 }
 
-void JournalImpl::dequeue_data(const uint64_t pid, const std::string& xid, const bool txn_coml_commit){
+void JournalImpl::dequeue_data(const uint64_t pid, const std::string&/* xid*/, const bool /*txn_coml_commit*/){
 	//std::cout<<"Wow ! this is async [DEQUEUE]!"<<std::endl;
 	try {
 		remove_msg(messageDb,pid);
@@ -374,7 +371,7 @@ void JournalImpl::dequeue_data(const uint64_t pid, const std::string& xid, const
 }
 
 void
-JournalImpl::txn_abort(const std::string& xid)
+JournalImpl::txn_abort(const std::string&/* xid*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "txn_abort");
     /*TODO: implement transaction
@@ -388,7 +385,7 @@ JournalImpl::txn_abort(const std::string& xid)
 }
 
 void
-JournalImpl::txn_commit(const std::string& xid)
+JournalImpl::txn_commit(const std::string& /*xid*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "txn_commit");
     /*TODO: implement transaction
@@ -402,7 +399,7 @@ JournalImpl::txn_commit(const std::string& xid)
 }
 
 void
-JournalImpl::stop(bool block_till_aio_cmpl)
+JournalImpl::stop(bool/* block_till_aio_cmpl*/)
 {
     /*iInactivityFireEvent* ifep = dynamic_cast<InactivityFireEvent*>(inactivityFireEventPtr.get());
     assert(ifep); // dynamic_cast can return null if the cast fails

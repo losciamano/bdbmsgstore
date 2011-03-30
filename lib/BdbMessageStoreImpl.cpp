@@ -73,8 +73,8 @@ BdbMessageStoreImpl::BdbMessageStoreImpl(qpid::sys::Timer& timer_, const char* e
                                  envPath(envpath),
                                  timer(timer_),
                                  mgmtObject(0),
-                                 agent(0),
-				 bdbwork(bdbserv)
+                                 agent(0)/*,
+				 bdbwork(bdbserv)*/
 {}
 
 void BdbMessageStoreImpl::initManagement (Broker* broker)
@@ -296,7 +296,7 @@ BdbMessageStoreImpl::~BdbMessageStoreImpl()
 }
 
 void BdbMessageStoreImpl::create(PersistableQueue& queue,
-                             const FieldTable& args)
+                             const FieldTable&/* args*/)
 {
     checkInit();
     if (queue.getPersistenceId()) {
@@ -886,7 +886,7 @@ void BdbMessageStoreImpl::recoverTplStore()
     }*/
 }
 
-void BdbMessageStoreImpl::recoverLockedMappings(txn_list& txns)
+void BdbMessageStoreImpl::recoverLockedMappings(txn_list& /*txns*/)
 {
     //TODO: implement transaction
     /*
@@ -903,7 +903,7 @@ void BdbMessageStoreImpl::recoverLockedMappings(txn_list& txns)
     }*/
 }
 
-void BdbMessageStoreImpl::collectPreparedXids(std::set<std::string>& xids)
+void BdbMessageStoreImpl::collectPreparedXids(std::set<std::string>&/* xids*/)
 {
     //TODO: implement transaction
     /*
@@ -1108,8 +1108,7 @@ u_int32_t BdbMessageStoreImpl::outstandingQueueAIO(const qpid::broker::Persistab
     return 0;
 }
 
-void BdbMessageStoreImpl::completed(TxnCtxt& txn,
-                                bool commit)
+void BdbMessageStoreImpl::completed(TxnCtxt& /*txn*/, bool /*commit*/)
 {
    //TODO: implement transaction
    /*
@@ -1147,7 +1146,7 @@ auto_ptr<TransactionContext> BdbMessageStoreImpl::begin()
     return auto_ptr<TransactionContext>(new TxnCtxt(&messageIdSequence));*/
 }
 
-std::auto_ptr<qpid::broker::TPCTransactionContext> BdbMessageStoreImpl::begin(const std::string& xid)
+std::auto_ptr<qpid::broker::TPCTransactionContext> BdbMessageStoreImpl::begin(const std::string& /*xid*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "begin");
     /*TODO: implement transaction
@@ -1157,7 +1156,7 @@ std::auto_ptr<qpid::broker::TPCTransactionContext> BdbMessageStoreImpl::begin(co
     return auto_ptr<TPCTransactionContext>(new TPCTxnCtxt(xid, jtx));*/
 }
 
-void BdbMessageStoreImpl::prepare(qpid::broker::TPCTransactionContext& ctxt)
+void BdbMessageStoreImpl::prepare(qpid::broker::TPCTransactionContext& /*ctxt*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "prepare");
     /*TODO: implement transaction
@@ -1168,7 +1167,7 @@ void BdbMessageStoreImpl::prepare(qpid::broker::TPCTransactionContext& ctxt)
     */
 }
 
-void BdbMessageStoreImpl::localPrepare(TxnCtxt* ctxt)
+void BdbMessageStoreImpl::localPrepare(TxnCtxt* /*ctxt*/)
 {
     //TODO: implement transaction
     /*
@@ -1198,7 +1197,7 @@ void BdbMessageStoreImpl::localPrepare(TxnCtxt* ctxt)
     }*/
 }
 
-void BdbMessageStoreImpl::commit(TransactionContext& ctxt)
+void BdbMessageStoreImpl::commit(TransactionContext& /*ctxt*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "commit");
     /*TODO: implement transaction
@@ -1212,7 +1211,7 @@ void BdbMessageStoreImpl::commit(TransactionContext& ctxt)
     */
 }
 
-void BdbMessageStoreImpl::abort(TransactionContext& ctxt)
+void BdbMessageStoreImpl::abort(TransactionContext& /*ctxt*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "abort");
     /* TODO: implement transaction
