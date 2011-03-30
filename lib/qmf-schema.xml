@@ -1,0 +1,47 @@
+<schema package="com.redhat.rhm.store">
+
+<!--
+ Copyright (c) 2007, 2008 Red Hat, Inc.
+
+ This file is part of the Qpid async store library msgstore.so.
+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301
+ USA
+
+ The GNU Lesser General Public License is available in the file COPYING.
+ -->
+
+  <class name="Store">
+    <property name="brokerRef"               type="objId"  access="RO" references="qpid.Broker" index="y" parentRef="y"/>
+    <property name="location"                type="sstr"   access="RO"              desc="Logical directory on disk"/>
+    <property name="tplIsInitialized" 	     type="bool"   access="RO" desc="Transaction prepared list has been initialized by a transactional prepare"/>
+    <property name="tplDirectory"            type="sstr"   access="RO"              desc="Transaction prepared list directory"/>
+  </class>
+
+  <class name="Journal">
+    <property name="queueRef"           type="objId"  access="RO" references="qpid.Queue" isGeneralReference="y"/>
+    <property name="name"               type="sstr"   access="RO" index="y"/>
+    <property name="directory"          type="sstr"   access="RO"              desc="Directory containing journal files"/>
+    <property name="bdbDir"       type="sstr"   access="RO"              desc="Berkeley DB directory"/>
+ </class> 
+  <eventArguments>
+    <arg name="jrnlId"     type="sstr"   desc="Journal Id"/>
+    <arg name="what"       type="sstr"   desc="Description of event"/>
+  </eventArguments>
+  <event name="enqThresholdExceeded" sev="warn"   args="jrnlId, what"/>
+  <event name="created"              sev="notice" args="jrnlId"/>
+  <event name="full"                 sev="error"  args="jrnlId, what"/>
+  <event name="recovered"            sev="notice" args="jrnlId"/>
+</schema>
