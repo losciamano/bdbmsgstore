@@ -174,7 +174,7 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     void flushFire();
 
     inline bool is_ready() const { return _is_init; }
-    inline bool is_txn_synced(const std::string& xid) { return true; /*TODO: implement transaction*/ }
+    inline bool is_txn_synced(const std::string& /*xid*/) { return true; /*TODO: implement transaction*/ }
 
     qpid::management::ManagementObject* GetManagementObject (void) const
     { return _mgmtObject; }

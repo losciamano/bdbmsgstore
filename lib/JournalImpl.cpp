@@ -136,17 +136,9 @@ void JournalImpl::delete_jrnl_files() {
 	if (messageDb.get()) {
 		messageDb->close(0);
 		std::stringstream ss;
-		ss <<this->journalDirectory<<this->journalDirectory;
-		TxnCtxt txn;
-		txn.begin(dbEnv.get(),false);
-		try {
-			dbEnv->dbremove(txn.get(),ss.str().c_str(),0,DB_AUTO_COMMIT);
-			txn.commit();
-			QPID_LOG(debug,"Message database "+ss.str()+"destroyed");
-		} catch (...) {
-			txn.abort();
-			throw;
-		}
+		ss <<this->journalDirectory<<this->journalName<<".db";
+		dbEnv->dbremove(0,ss.str().c_str(),0,DB_AUTO_COMMIT);
+		QPID_LOG(debug,"Message database "+ss.str()+"destroyed");
 		messageDb.reset();
 	}
 	std::stringstream ss;
