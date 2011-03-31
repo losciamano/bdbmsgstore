@@ -133,7 +133,7 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
                  u_int64_t& highest_rid,
                  u_int64_t queue_id);
 
-    void recoverMessages(TxnCtxt& txn,std::vector< std::pair < uint64_t,std::string> >& recovered);
+    void recoverMessages(std::vector< std::pair < uint64_t,std::string> >& recovered);
     void recover_complete();
 
 
@@ -174,6 +174,7 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     inline bool is_ready() const { return _is_init; }
     inline bool is_txn_synced(const std::string& /*xid*/) { return true; /*TODO: implement transaction*/ }
     void discard_transient_message();
+    void compact_message_database();
 
     qpid::management::ManagementObject* GetManagementObject (void) const
     { return _mgmtObject; }

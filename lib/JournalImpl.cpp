@@ -258,10 +258,10 @@ JournalImpl::recover(/*const u_int16_t num_jfiles,
     }
 }
 
-void JournalImpl::recoverMessages(TxnCtxt& txn,std::vector< std::pair < uint64_t,std::string> >& recovered) {
+void JournalImpl::recoverMessages(std::vector< std::pair < uint64_t,std::string> >&recovered) {
 	this->init_message_db();
 	Cursor messages;
-	messages.open(messageDb, txn.get());	
+	messages.open(messageDb, 0); //Open cursor outside transaction	
 	IdDbt key;
     	Dbt value;
     	//read all messages
@@ -275,6 +275,7 @@ void JournalImpl::recoverMessages(TxnCtxt& txn,std::vector< std::pair < uint64_t
 void
 JournalImpl::recover_complete()
 {
+    discard_transient_message();
     log(LOG_DEBUG, "Recover phase 2 complete; journal now writable.");
     if (_agent != 0)
         _agent->raiseEvent(qmf::com::redhat::rhm::store::EventRecovered(journalName),qpid::management::ManagementAgent::SEV_NOTE);
@@ -344,6 +345,9 @@ void JournalImpl::discard_transient_message() {
 	if (transientList.empty()) {
 		return;
 	}
+	std::stringstream ss;
+	ss << "Start deleting "<<transientList.size()<<" transient messages...";
+	log(LOG_INFO,ss.str());
 	for (std::list<uint64_t>::iterator it=transientList.begin();it!=transientList.end();it++) {
 		uint64_t id(*it);
 		Dbt key(&id,sizeof(id));
@@ -355,12 +359,27 @@ void JournalImpl::discard_transient_message() {
 			
 	}
 	transientList.clear();
-	std::stringstream ss;
-	ss<<transientCount<<" transient message deleted from Db.";
+	messageDb->sync(0);
+	std::stringstream ss2;
+	ss2<<transientCount<<" transient message deleted from Db.";
 	if (errorFlag) {
-		ss<<" Some messages have encountered an error during deleting.";
+		ss2<<" Some messages have encountered an error during deleting.";
 	}
-	log(LOG_NOTICE,ss.str());
+	log(LOG_INFO,ss2.str());
+}
+
+void JournalImpl::compact_message_database() {
+	DB_COMPACT* cmpt= new DB_COMPACT();
+	if (messageDb->compact(0,0,0,cmpt,DB_FREE_SPACE,0)!=0) {
+		log(LOG_WARN,"Error in compacting message database");
+	} else {
+		uint32_t pgsize=0;
+		messageDb->get_pagesize(&pgsize);
+		std::stringstream ss;
+		ss << "Compacted! Page Size: "<<pgsize<<";Pages examined: "<<cmpt->compact_pages_examine<<";Pages freed: "<<cmpt->compact_pages_free;
+		ss << ";Pages returned to filesystem: "<<cmpt->compact_pages_truncated;
+		log(LOG_INFO,ss.str());
+	}
 }
 
 void JournalImpl::remove_msg(boost::shared_ptr<Db> db, const uint64_t pid)
@@ -429,10 +448,10 @@ JournalImpl::txn_commit(const std::string& /*xid*/)
 void
 JournalImpl::stop(bool/* block_till_aio_cmpl*/)
 {
-    /*iInactivityFireEvent* ifep = dynamic_cast<InactivityFireEvent*>(inactivityFireEventPtr.get());
+    InactivityFireEvent* ifep = dynamic_cast<InactivityFireEvent*>(inactivityFireEventPtr.get());
     assert(ifep); // dynamic_cast can return null if the cast fails
     ifep->cancel();
-    jcntl::stop(block_till_aio_cmpl);*/
+    /*jcntl::stop(block_till_aio_cmpl);*/
 
     if (_mgmtObject != 0) {
         _mgmtObject->resourceDestroy();
@@ -498,7 +517,6 @@ JournalImpl::flushFire()
         flushTriggeredFlag = false;
     } else {
         if (!flushTriggeredFlag) {
-	    discard_transient_message();
             flush();
             flushTriggeredFlag = true;
         }

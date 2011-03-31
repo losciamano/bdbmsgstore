@@ -68,13 +68,14 @@ BdbMessageStoreImpl::TplRecoverStruct::TplRecoverStruct(const u_int64_t _rid,
 
 BdbMessageStoreImpl::BdbMessageStoreImpl(qpid::sys::Timer& timer_, const char* envpath) :
                                  truncateFlag(false),
+				 compactFlag(true),
                                  highestRid(0),
                                  isInit(false),
                                  envPath(envpath),
                                  timer(timer_),
                                  mgmtObject(0),
-                                 agent(0)/*,
-				 bdbwork(bdbserv)*/
+                                 agent(0),
+				 bdbwork(bdbserv)
 {}
 
 void BdbMessageStoreImpl::initManagement (Broker* broker)
@@ -96,6 +97,7 @@ bool BdbMessageStoreImpl::init(const qpid::Options* options)
 {
     // Extract and check options
     const StoreOptions* opts = static_cast<const StoreOptions*>(options);
+    this->compactFlag=opts->compactFlag;
 
     // Pass option values to init(...)
     return init(opts->storeDir);
@@ -139,6 +141,8 @@ void BdbMessageStoreImpl::init()
             dbenv->set_errpfx("bdbmsgstore");
             dbenv->set_lg_regionmax(256000); // default = 65000
 	    dbenv->set_lk_detect(DB_LOCK_DEFAULT);
+	    //dbenv->set_lk_max_locks(50000);
+	    //dbenv->set_lk_max_objects(50000);
             dbenv->open(getBdbBaseDir().c_str(), DB_THREAD | DB_CREATE | DB_INIT_TXN | DB_INIT_LOCK | DB_INIT_LOG | DB_INIT_MPOOL | DB_USE_ENVIRON | DB_RECOVER, 0);
 
             // Databases are constructed here instead of the constructor so that the DB_RECOVER flag can be used
@@ -171,8 +175,8 @@ void BdbMessageStoreImpl::init()
 
             tplStorePtr.reset(new TplJournalImpl(timer, "TplStore", getTplBaseDir(), "tpl", defJournalGetEventsTimeout, defJournalFlushTimeout, agent,dbenv));
 	    
-	    //this->servThread=boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&boost::asio::io_service::run, &bdbserv)));
-	    //QPID_LOG(debug,"Journal io_service run");
+	    this->servThread=boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&boost::asio::io_service::run, &bdbserv)));
+	    QPID_LOG(debug,"Journal io_service run");
 
             isInit = true;
         } catch (const DbException& e) {
@@ -492,7 +496,16 @@ void BdbMessageStoreImpl::recover(RecoveryManager& registry)
         txn.abort();
         throw;
     }
-
+    
+    //Delete transient message from recovered journal db
+    for (std::list<JournalImpl*>::iterator it=this->recoveredJournal.begin();it!=recoveredJournal.end();it++) {
+    	(*it)->discard_transient_message();
+	if (compactFlag) {
+		(*it)->compact_message_database();
+	}
+    }
+    this->recoveredJournal.clear();    
+    
     //recover transactions:
     //TODO: SUPPORT TRANSACTION
     /*for (txn_list::iterator i = prepared.begin(); i != prepared.end(); i++) {
@@ -560,6 +573,7 @@ void BdbMessageStoreImpl::recover(RecoveryManager& registry)
         }
     }*/
     registry.recoveryComplete();
+    QPID_LOG(info,"Restore complete!");
 }
 
 void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
@@ -568,7 +582,6 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
                                     txn_list& prepared,
                                     message_index& messages)
 {
-    std::list<JournalImpl*> extQueuesList;
     Cursor queues;
     queues.open(queueDb, txn.get());
 
@@ -598,15 +611,15 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
             qpid::sys::Mutex::ScopedLock sl(journalListLock);
             journalList[queueName] = jQueue;
         }
-	extQueuesList.push_back(jQueue);
         queue->setExternalQueueStore(dynamic_cast<ExternalQueueStore*>(jQueue));
+	recoveredJournal.push_back(jQueue);
 	
         try
         {
             long rcnt = 0L;     // recovered msg count
             long idcnt = 0L;    // in-doubt msg count
             u_int64_t thisHighestRid = 0ULL;
-            thisHighestRid=recoverMessages(txn, registry, queue, prepared, messages, rcnt, idcnt);
+            thisHighestRid=recoverMessages(registry, queue, prepared, messages, rcnt, idcnt);
 	    if (highestRid == 0ULL)
                 highestRid = thisHighestRid;
             else if (thisHighestRid - highestRid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
@@ -628,12 +641,6 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
     QPID_LOG(info, "Most recent persistence id found: 0x" << std::hex << highestRid << std::dec);
 
     queueIdSequence.reset(maxQueueId + 1);
-    /*queues.close(); //Close cursor to release READ lock and avoid deadlock on transient message deleting	 
-
-    for (std::list<JournalImpl*>::iterator it=extQueuesList.begin();it!=extQueuesList.end();it++) {
-    	(*it)->discard_transient_message();
-    }
-    extQueuesList.clear();*/
 
 }
 
@@ -720,8 +727,7 @@ void BdbMessageStoreImpl::recoverGeneral(TxnCtxt& txn,
     generalIdSequence.reset(maxGeneralId + 1);
 }
 
-uint64_t BdbMessageStoreImpl::recoverMessages(TxnCtxt& txn,
-                                      qpid::broker::RecoveryManager& recovery,
+uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& recovery,
                                       qpid::broker::RecoverableQueue::shared_ptr& queue,
                                       txn_list& /*prepared*/,
                                       message_index& /*messages*/,
@@ -736,7 +742,7 @@ uint64_t BdbMessageStoreImpl::recoverMessages(TxnCtxt& txn,
 		JournalImpl* jc = static_cast<JournalImpl*>(queue->getExternalQueueStore());
 		std::vector< std::pair <uint64_t,std::string> > recovered;
 		std::vector< uint64_t > transientMsg;
-		jc->recoverMessages(txn,recovered);
+		jc->recoverMessages(recovered);
 		for (std::vector< std::pair <uint64_t,std::string> >::iterator it=recovered.begin();it<recovered.end();it++) {
 			char* rawData= new char[it->second.size()];
 			memcpy(rawData,it->second.data(),it->second.size());
@@ -1112,8 +1118,8 @@ void BdbMessageStoreImpl::async_dequeue(TransactionContext* ctxt,
     }
     try {
         JournalImpl* jc = static_cast<JournalImpl*>(queue.getExternalQueueStore());
-        jc->dequeue_data(msg->getPersistenceId(), tid);
-	//bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
+        //jc->dequeue_data(msg->getPersistenceId(), tid);
+	bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
     } catch (const journal::jexception& e) {
         THROW_STORE_EXCEPTION(std::string("Queue ") + queue.getName() + ": async_dequeue() failed: " + e.what());
     }
@@ -1395,7 +1401,8 @@ void BdbMessageStoreImpl::journalDeleted(JournalImpl& j) {
 
 BdbMessageStoreImpl::StoreOptions::StoreOptions(const std::string& name) :
                                              qpid::Options(name),
-                                             truncateFlag(defTruncateFlag)
+                                             truncateFlag(defTruncateFlag),
+					     compactFlag(true)
 {
     addOptions()
         ("store-dir", qpid::optValue(storeDir, "DIR"),
@@ -1404,6 +1411,9 @@ BdbMessageStoreImpl::StoreOptions::StoreOptions(const std::string& name) :
         ("truncate", qpid::optValue(truncateFlag, "yes|no"),
                 "If yes|true|1, will truncate the store (discard any existing records). If no|false|0, will preserve "
                 "the existing store files for recovery.")
+	("bdbstore-compact",qpid::optValue(compactFlag,"yes|no"),
+		"If yes|true|1, will compact the store and return bdb pages to filesystem. The compaction will be done at the end of the "
+		"queue recovery phase. NOTE: for big databases this operation may take a long time to end.")
         ;
 }
 

@@ -68,6 +68,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
         std::string clusterName;
         std::string storeDir;
         bool      truncateFlag;
+	bool 	  compactFlag;
     };
 
   protected:
@@ -100,11 +101,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     static const std::string storeTopLevelDir;
     static qpid::sys::Duration defJournalGetEventsTimeout;
     static qpid::sys::Duration defJournalFlushTimeout;
-   
-    /*boost::asio::io_service bdbserv;
-    boost::asio::io_service::work bdbwork;
-    boost::shared_ptr<boost::thread> servThread;*/
-
+    
     std::list<db_ptr> dbs;
     dbEnv_ptr dbenv;
     db_ptr queueDb;
@@ -127,6 +124,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     IdSequence messageIdSequence;
     std::string storeDir;
     bool      truncateFlag;
+    bool      compactFlag;
     u_int64_t highestRid;
     bool isInit;
     const char* envPath;
@@ -134,6 +132,13 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
 
     qmf::com::redhat::rhm::store::Store* mgmtObject;
     qpid::management::ManagementAgent* agent;
+    
+    boost::asio::io_service bdbserv;
+    boost::asio::io_service::work bdbwork;
+    boost::shared_ptr<boost::thread> servThread;
+
+    std::list<JournalImpl*> recoveredJournal;
+
     
 
     // Parameter validation and calculation
@@ -144,13 +149,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
                        queue_index& index,
                        txn_list& locked,
                        message_index& messages);
-    void recoverMessages(TxnCtxt& txn,
-                         qpid::broker::RecoveryManager& recovery,
-                         queue_index& index,
-                         txn_list& locked,
-                         message_index& prepared);
-    uint64_t recoverMessages(TxnCtxt& txn,
-                         qpid::broker::RecoveryManager& recovery,
+    uint64_t recoverMessages(qpid::broker::RecoveryManager& recovery,
                          qpid::broker::RecoverableQueue::shared_ptr& queue,
                          txn_list& locked,
                          message_index& prepared,
