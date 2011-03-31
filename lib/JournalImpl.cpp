@@ -287,7 +287,7 @@ JournalImpl::recover_complete()
 bool
 JournalImpl::loadMsgContent(u_int64_t rid, std::string& data, size_t length, size_t offset)
 {
-	size_t preambleLength = sizeof(u_int32_t)/*header size*/;
+	size_t preambleLength = sizeof(u_int32_t)+sizeof(u_int8_t)/*header size + transient flag*/;
 	Dbc* messages;
 	messageDb->cursor(0,&messages,0);	
 	u_int64_t id(rid);	
@@ -297,6 +297,7 @@ JournalImpl::loadMsgContent(u_int64_t rid, std::string& data, size_t length, siz
 	messages->close();
 	if(dbErr) return false;
 	qpid::framing::Buffer msgBuff(reinterpret_cast<char*>(value.get_data()),value.get_size());
+	msgBuff.getOctet(); //Make buffer cursor slide by 8 bit. Transient flag is useless in this context. Transient or not this message must be loaded!
 	u_int32_t headerSize=msgBuff.getLong();
 	uint32_t contentOffset = headerSize + preambleLength;
 	uint64_t contentSize = msgBuff.getSize() - contentOffset;
@@ -332,6 +333,36 @@ bool JournalImpl::store_msg(boost::shared_ptr<Db> db,
     }
 }
 
+void JournalImpl::register_as_transient(std::vector<uint64_t>& trList) {
+	this->transientList.insert(transientList.begin(),trList.begin(),trList.end());
+	writeActivityFlag=true;
+}
+
+void JournalImpl::discard_transient_message() {
+	int transientCount=0;
+	bool errorFlag=false;
+	if (transientList.empty()) {
+		return;
+	}
+	for (std::list<uint64_t>::iterator it=transientList.begin();it!=transientList.end();it++) {
+		uint64_t id(*it);
+		Dbt key(&id,sizeof(id));
+		if (messageDb->del(0,&key,DB_AUTO_COMMIT)!=0) {
+			errorFlag=true;
+		} else {
+			transientCount++;
+		}
+			
+	}
+	transientList.clear();
+	std::stringstream ss;
+	ss<<transientCount<<" transient message deleted from Db.";
+	if (errorFlag) {
+		ss<<" Some messages have encountered an error during deleting.";
+	}
+	log(LOG_NOTICE,ss.str());
+}
+
 void JournalImpl::remove_msg(boost::shared_ptr<Db> db, const uint64_t pid)
 {
     writeActivityFlag=true;
@@ -350,19 +381,16 @@ void JournalImpl::remove_msg(boost::shared_ptr<Db> db, const uint64_t pid)
 
 void JournalImpl::enqueue_data(char* data_buff, const size_t /*tot_data_len*/, const size_t this_data_len, 
 					uint64_t pid,const std::string&/* xid*/, const bool /*transient*/) {
-	//std::cout<<"Wow ! this is async [ENQUEUE]!"<<std::endl;
 	try {
 		Dbt msgValue(data_buff,this_data_len);
 		store_msg(messageDb,pid,msgValue);
 	} catch (const DbException& e) {
         	THROW_STORE_EXCEPTION_2("Error storing the message", e);
     	}
-	//std::cout<<"Enqueue complete "<<pid<<std::endl;
 
 }
 
 void JournalImpl::dequeue_data(const uint64_t pid, const std::string&/* xid*/, const bool /*txn_coml_commit*/){
-	//std::cout<<"Wow ! this is async [DEQUEUE]!"<<std::endl;
 	try {
 		remove_msg(messageDb,pid);
 	} catch (const DbException& e) {
@@ -470,6 +498,7 @@ JournalImpl::flushFire()
         flushTriggeredFlag = false;
     } else {
         if (!flushTriggeredFlag) {
+	    discard_transient_message();
             flush();
             flushTriggeredFlag = true;
         }

@@ -24,7 +24,8 @@
 #ifndef _JournalImpl_
 #define _JournalImpl_
 
-#include <set>
+#include <list>
+#include <vector>
 #include "jrnl/enums.hpp"
 #include "PreparedTransaction.h"
 #include <qpid/broker/PersistableQueue.h>
@@ -102,6 +103,7 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     qpid::management::ManagementAgent* _agent;
     qmf::com::redhat::rhm::store::Journal* _mgmtObject;
     DeleteCallback deleteCallback;
+    std::list<uint64_t> transientList;
     
   public:
     
@@ -171,6 +173,7 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
 
     inline bool is_ready() const { return _is_init; }
     inline bool is_txn_synced(const std::string& /*xid*/) { return true; /*TODO: implement transaction*/ }
+    void discard_transient_message();
 
     qpid::management::ManagementObject* GetManagementObject (void) const
     { return _mgmtObject; }
@@ -181,6 +184,9 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
 
     void resetDeleteCallback() { deleteCallback = DeleteCallback(); }
     
+    void register_as_transient(std::vector<uint64_t>& trList);
+
+
     void delete_jrnl_files();
 
   private:

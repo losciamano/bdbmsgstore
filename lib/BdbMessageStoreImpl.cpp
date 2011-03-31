@@ -568,6 +568,7 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
                                     txn_list& prepared,
                                     message_index& messages)
 {
+    std::list<JournalImpl*> extQueuesList;
     Cursor queues;
     queues.open(queueDb, txn.get());
 
@@ -590,13 +591,14 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
             QPID_LOG(error, "Cannot recover empty (null) queue name - ignoring and attempting to continue.");
             break;
         }
-        jQueue = new JournalImpl(timer, queueName, getJrnlHashDir(queueName), std::string("JournalData"),
+        jQueue = new JournalImpl(timer, queueName, getJrnlHashDir(queueName), getBdbBaseDir(),
                                  defJournalGetEventsTimeout, defJournalFlushTimeout,agent,dbenv,
                                  boost::bind(&BdbMessageStoreImpl::journalDeleted, this, _1));
         {
             qpid::sys::Mutex::ScopedLock sl(journalListLock);
             journalList[queueName] = jQueue;
         }
+	extQueuesList.push_back(jQueue);
         queue->setExternalQueueStore(dynamic_cast<ExternalQueueStore*>(jQueue));
 	
         try
@@ -604,7 +606,6 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
             long rcnt = 0L;     // recovered msg count
             long idcnt = 0L;    // in-doubt msg count
             u_int64_t thisHighestRid = 0ULL;
-            /*jQueue->recover(numJrnlFiles, autoJrnlExpand, autoJrnlExpandMaxFiles, jrnlFsizeSblks, wCacheNumPages, wCachePgSizeSblks, &prepared, thisHighestRid, key.id); // start recovery*/
             thisHighestRid=recoverMessages(txn, registry, queue, prepared, messages, rcnt, idcnt);
 	    if (highestRid == 0ULL)
                 highestRid = thisHighestRid;
@@ -627,6 +628,13 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
     QPID_LOG(info, "Most recent persistence id found: 0x" << std::hex << highestRid << std::dec);
 
     queueIdSequence.reset(maxQueueId + 1);
+    /*queues.close(); //Close cursor to release READ lock and avoid deadlock on transient message deleting	 
+
+    for (std::list<JournalImpl*>::iterator it=extQueuesList.begin();it!=extQueuesList.end();it++) {
+    	(*it)->discard_transient_message();
+    }
+    extQueuesList.clear();*/
+
 }
 
 
@@ -724,32 +732,41 @@ uint64_t BdbMessageStoreImpl::recoverMessages(TxnCtxt& txn,
 {
 	uint64_t maxRid=0ULL;
 	try {
-		size_t preambleLength = sizeof(u_int32_t)/*header size*/;
+		size_t preambleLength = sizeof(u_int32_t)+sizeof(u_int8_t)/*header size + transient flag*/;
 		JournalImpl* jc = static_cast<JournalImpl*>(queue->getExternalQueueStore());
 		std::vector< std::pair <uint64_t,std::string> > recovered;
+		std::vector< uint64_t > transientMsg;
 		jc->recoverMessages(txn,recovered);
 		for (std::vector< std::pair <uint64_t,std::string> >::iterator it=recovered.begin();it<recovered.end();it++) {
 			char* rawData= new char[it->second.size()];
 			memcpy(rawData,it->second.data(),it->second.size());
 			RecoverableMessage::shared_ptr msg;
 			Buffer msgBuff(rawData,it->second.size());
-			u_int32_t headerSize=msgBuff.getLong();
-			Buffer headerBuff(msgBuff.getPointer()+preambleLength,headerSize);
-			msg = recovery.recoverMessage(headerBuff);
-			msg->setPersistenceId(it->first);
-			maxRid=max(it->first,maxRid);
-			msg->setRedelivered();
-			uint32_t contentOffset = headerSize + preambleLength;
-			uint64_t contentSize = msgBuff.getSize() - contentOffset;
-			if (msg->loadContent(contentSize)) {
-			    //now read the content
-			    Buffer contentBuff(msgBuff.getPointer() + contentOffset, contentSize);
-			    msg->decodeContent(contentBuff);
-			    rcnt++;
-			    queue->recover(msg);
+			u_int8_t transientFlag=msgBuff.getOctet();
+			if (!transientFlag) {
+				u_int32_t headerSize=msgBuff.getLong();
+				Buffer headerBuff(msgBuff.getPointer()+preambleLength,headerSize);
+				msg = recovery.recoverMessage(headerBuff);
+				msg->setPersistenceId(it->first);
+				maxRid=max(it->first,maxRid);
+				msg->setRedelivered();
+				uint32_t contentOffset = headerSize + preambleLength;
+				uint64_t contentSize = msgBuff.getSize() - contentOffset;
+				if (msg->loadContent(contentSize)) {
+				    //now read the content
+				    Buffer contentBuff(msgBuff.getPointer() + contentOffset, contentSize);
+				    msg->decodeContent(contentBuff);
+				    rcnt++;
+				    queue->recover(msg);
+				}
+			} else {
+				transientMsg.push_back(it->first);
 			}
-			delete rawData;
+			delete [] rawData;
 		}
+		jc->register_as_transient(transientMsg);
+		transientMsg.clear();
+		recovered.clear();
     	} catch (const journal::jexception& e) {
 	        THROW_STORE_EXCEPTION(std::string("Queue ") + queue->getName() + ": recoverMessages() failed: " + e.what());
 	}
@@ -1017,14 +1034,15 @@ void BdbMessageStoreImpl::enqueue(TransactionContext* ctxt,
 u_int64_t BdbMessageStoreImpl::msgEncode(std::vector<char>& buff, const intrusive_ptr<PersistableMessage>& message)
 {
     u_int32_t headerSize = message->encodedHeaderSize();
-    u_int64_t size = message->encodedSize() + sizeof(u_int32_t);
-    try { buff = std::vector<char>(size); } // long + headers + content
+    u_int64_t size = message->encodedSize() + sizeof(u_int32_t)+ sizeof(u_int8_t);
+    try { buff = std::vector<char>(size); } // byte (transient flag) + long(header size) + headers + content
     catch (const std::exception& e) {
         std::ostringstream oss;
         oss << "Unable to allocate memory for encoding message; requested size: " << size << "; error: " << e.what();
         THROW_STORE_EXCEPTION(oss.str());
     }
     Buffer buffer(&buff[0],size);
+    buffer.putOctet(message->isPersistent()?0:1);
     buffer.putLong(headerSize);
     message->encode(buffer);
     return size;
@@ -1097,7 +1115,6 @@ void BdbMessageStoreImpl::async_dequeue(TransactionContext* ctxt,
         jc->dequeue_data(msg->getPersistenceId(), tid);
 	//bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
     } catch (const journal::jexception& e) {
-        //ddtokp->release();
         THROW_STORE_EXCEPTION(std::string("Queue ") + queue.getName() + ": async_dequeue() failed: " + e.what());
     }
 }
