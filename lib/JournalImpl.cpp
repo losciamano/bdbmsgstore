@@ -416,7 +416,6 @@ void JournalImpl::dequeue_data(const uint64_t pid, const std::string&/* xid*/, c
 	try {
 		remove_msg(messageDb,pid);
 		std::stringstream ss;
-		ss << "Dequeue done for "<<pid;
 		log(LOG_INFO,ss.str());
 	} catch (const DbException& e) {
 		THROW_STORE_EXCEPTION_2("Error removing the message",e);

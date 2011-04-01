@@ -1118,11 +1118,8 @@ void BdbMessageStoreImpl::async_dequeue(TransactionContext* ctxt,
     }
     try {
         JournalImpl* jc = static_cast<JournalImpl*>(queue.getExternalQueueStore());
-        jc->dequeue_data(msg->getPersistenceId(), tid);
-	//bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
-	std::stringstream ss;
-	ss << "Dispatching async dequeue for "<<msg->getPersistenceId();
-	QPID_LOG(info,ss.str()); 
+        //jc->dequeue_data(msg->getPersistenceId(), tid);
+	bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
     } catch (const journal::jexception& e) {
         THROW_STORE_EXCEPTION(std::string("Queue ") + queue.getName() + ": async_dequeue() failed: " + e.what());
     }
