@@ -232,7 +232,10 @@ class TplJournalImpl : public JournalImpl
     inline void read_reset() { _rmgr.invalidate(); }*/
 }; // class TplJournalImpl
 
+
+
 } // namespace msgstore
 } // namespace mrg
 
+int bt_compare_func(Db *db,const Dbt* value1,const Dbt* value2);
 #endif

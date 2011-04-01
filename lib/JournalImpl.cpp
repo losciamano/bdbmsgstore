@@ -149,6 +149,9 @@ void JournalImpl::init_message_db() {
     // against the database environment. Recover can only be performed if no databases have been created
     // against the environment at the time of recovery, as recovery invalidates the environment.
     messageDb.reset(new Db(dbEnv.get(), 0));
+
+    messageDb->set_bt_compare(&bt_compare_func);
+
     std::stringstream ss;
     ss << this->journalDirectory;
     ss << this->journalName<<".db";
@@ -412,6 +415,9 @@ void JournalImpl::enqueue_data(char* data_buff, const size_t /*tot_data_len*/, c
 void JournalImpl::dequeue_data(const uint64_t pid, const std::string&/* xid*/, const bool /*txn_coml_commit*/){
 	try {
 		remove_msg(messageDb,pid);
+		std::stringstream ss;
+		ss << "Dequeue done for "<<pid;
+		log(LOG_INFO,ss.str());
 	} catch (const DbException& e) {
 		THROW_STORE_EXCEPTION_2("Error removing the message",e);
 	}
@@ -542,4 +548,13 @@ qpid::management::Manageable::status_t JournalImpl::ManagementMethod (uint32_t m
 	    }
     }
     return status;
+}
+
+int bt_compare_func(Db* /*db*/,const Dbt* value1,const Dbt* value2) {
+	uint64_t first_key=0;
+	uint64_t second_key=0;
+	memcpy(&first_key,value1->get_data(),value1->get_size());
+	memcpy(&second_key,value2->get_data(),value2->get_size());
+	int diff=static_cast<int>(first_key-second_key);
+	return diff;
 }

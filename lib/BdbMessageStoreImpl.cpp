@@ -176,7 +176,7 @@ void BdbMessageStoreImpl::init()
             tplStorePtr.reset(new TplJournalImpl(timer, "TplStore", getTplBaseDir(), "tpl", defJournalGetEventsTimeout, defJournalFlushTimeout, agent,dbenv));
 	    
 	    this->servThread=boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&boost::asio::io_service::run, &bdbserv)));
-	    QPID_LOG(debug,"Journal io_service run");
+	    QPID_LOG(info,"Journal io_service run");
 
             isInit = true;
         } catch (const DbException& e) {
@@ -1118,8 +1118,11 @@ void BdbMessageStoreImpl::async_dequeue(TransactionContext* ctxt,
     }
     try {
         JournalImpl* jc = static_cast<JournalImpl*>(queue.getExternalQueueStore());
-        //jc->dequeue_data(msg->getPersistenceId(), tid);
-	bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
+        jc->dequeue_data(msg->getPersistenceId(), tid);
+	//bdbserv.dispatch(boost::bind(&JournalImpl::dequeue_data,jc,msg->getPersistenceId(),tid,false));
+	std::stringstream ss;
+	ss << "Dispatching async dequeue for "<<msg->getPersistenceId();
+	QPID_LOG(info,ss.str()); 
     } catch (const journal::jexception& e) {
         THROW_STORE_EXCEPTION(std::string("Queue ") + queue.getName() + ": async_dequeue() failed: " + e.what());
     }
