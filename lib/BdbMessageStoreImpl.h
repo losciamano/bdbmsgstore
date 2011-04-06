@@ -62,12 +62,32 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
   public:
     typedef boost::shared_ptr<Db> db_ptr;
     typedef boost::shared_ptr<DbEnv> dbEnv_ptr;
-
+    /**
+    *	This struct contains information about plugin options
+    */
     struct StoreOptions : public qpid::Options {
+    	/**
+	*	Base constructor for options struct
+	**/
         StoreOptions(const std::string& name="Store Options");
+	/**
+	*	Cluster Name Option
+	*/
         std::string clusterName;
+	/**
+	*	Path of the store Directory
+	**/
         std::string storeDir;
+	/**
+	*	Truncate flag option.
+	*       If true, will truncate the store (discard any existing records). If no|false|0, will preserve the existing store files for recovery.
+	**/
         bool      truncateFlag;
+	/**
+	*	Compact flag option.
+	*	If true, will compact the Berkeley Db after recovery and transient message deletion; this operation return to filesystem useless db
+	*	pages.
+	**/
 	bool 	  compactFlag;
     };
 
@@ -79,10 +99,15 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     typedef LockedMappings::map txn_lock_map;
     typedef boost::ptr_list<PreparedTransaction> txn_list;
 
-    // Structs for Transaction Recover List (TPL) recover state
+    /**
+    *	Structs for Transaction Recover List (TPL) recover state
+    **/
     struct TplRecoverStruct {
-        u_int64_t rid; // rid of TPL record
-        bool deq_flag;
+        /**
+	*	rid of TPL record
+	*/
+        u_int64_t rid;
+	bool deq_flag;
         bool commit_flag;
         bool tpc_flag;
         TplRecoverStruct(const u_int64_t _rid, const bool _deq_flag, const bool _commit_flag, const bool _tpc_flag);
@@ -95,55 +120,159 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     typedef std::map<std::string, JournalImpl*> JournalListMap;
     typedef JournalListMap::iterator JournalListMapItr;
 
-    // Default store settings
+    //Default store settings
+    /**
+    *	Default truncate flag option value.
+    **/
     static const bool      defTruncateFlag = false;
-
+    /**
+    *	Default store directory
+    **/
     static const std::string storeTopLevelDir;
+    /**
+    *	Default Timeout for Get Events
+    **/
     static qpid::sys::Duration defJournalGetEventsTimeout;
+    /**
+    *	Default Timeout for Journal Flushing
+    **/
     static qpid::sys::Duration defJournalFlushTimeout;
     
+    /**
+    *	List containing pointer to all db opened
+    **/
     std::list<db_ptr> dbs;
+    /**
+    *	Pointer to the Berkeley Database Environment
+    **/
     dbEnv_ptr dbenv;
+    /**
+    *	Pointer to the BDB containing information about queues
+    **/
     db_ptr queueDb;
+    /**
+    *	Pointer to the BDB containing information about configuration
+    **/
     db_ptr configDb;
+    /**
+    *	Pointer to the BDB containing information about exchanges
+    **/
     db_ptr exchangeDb;
+    /**
+    *	Pointer to the BDB containing information about mappings
+    **/
     db_ptr mappingDb;
+    /**
+    *	Pointer to the BDB containing information about bindings
+    **/
     db_ptr bindingDb;
+    /**
+    *	Pointer to the BDB containing information about general configurations
+    **/
     db_ptr generalDb;
 
-    // Pointer to Transaction Prepared List (TPL) journal instance
+    /**
+    *	Pointer to Transaction Prepared List (TPL) journal instance
+    */
     boost::shared_ptr<TplJournalImpl> tplStorePtr;
     //TplRecoverMap tplRecoverMap;//TODO:implement transaction
+    /**
+    *	Lock over TPL journal initialization
+    **/
     qpid::sys::Mutex tplInitLock;
+    /**
+    *	Data structure containings association between queue name e JournalImpl object
+    **/
     JournalListMap journalList;
+    /**
+    *	Lock over Journal List access
+    **/
     qpid::sys::Mutex journalListLock;
 
+    /**
+    *	Sequence used for generating new queue id
+    **/
     IdSequence queueIdSequence;
+    /**
+    *	Sequence used for generating new exchange id
+    **/
     IdSequence exchangeIdSequence;
+    /**
+    *	Sequence used for generating new general id
+    **/
     IdSequence generalIdSequence;
+    /**
+    *	Sequence used for generating new message persistence id
+    **/
     IdSequence messageIdSequence;
+    /**
+    *	String rappresenting store directory for the plugin
+    **/
     std::string storeDir;
+    /**
+    *	Truncate flag value
+    **/
     bool      truncateFlag;
+    /**
+    *	Compact flag value
+    **/
     bool      compactFlag;
+    /**
+    *	Highest value of the persistence ID
+    **/
     u_int64_t highestRid;
+    /**
+    *	Flag indicating if the Message Store is initialized
+    **/
     bool isInit;
+    /**
+    *	Environment Path
+    **/
     const char* envPath;
+    /**
+    *	Reference to the Timer Object used for timeout
+    **/
     qpid::sys::Timer& timer;
 
+    /**
+    *	Management object of the Store used for QMF
+    **/
     qmf::com::redhat::rhm::store::Store* mgmtObject;
+    /**
+    *	Management Agent used to communicate with QMF
+    **/
     qpid::management::ManagementAgent* agent;
     
+    /**
+    *	Boost I/O service used for asynchronous dequeue
+    **/
     boost::asio::io_service bdbserv;
+    /**
+    *	Boost Work used for keep service alive when there's no dequeue in act
+    **/
     boost::asio::io_service::work bdbwork;
+    /**
+    *	Boost Thread that executes the Boost I/O service
+    **/
     boost::shared_ptr<boost::thread> servThread;
 
+    /**
+    *	List containing pointer to all recovered Journal
+    **/
     std::list<JournalImpl*> recoveredJournal;
 
     
 
-    // Parameter validation and calculation
+    /**
+    *	Initialization Method used when NO RECOVERY task is needed.
+    *	This Method open the BDB environments and all the databases.
+    **/
     void init();
-
+    /**
+    *	Method for recovering queue information from the Berkeley Database.
+    *	This method reads information from the database and, for each queue recovered, calls recoverMessages.
+    *	@param	txn		Transaction context indicating the transaction for the recovery
+    *	@param	recovery	Reference to the Recovery Manager **/
     void recoverQueues(TxnCtxt& txn,
                        qpid::broker::RecoveryManager& recovery,
                        queue_index& index,

@@ -191,8 +191,8 @@ gl_saved_libs=$LIBS
 #		 [test "$ac_cv_search___db_open" = "none required" ||
 #		  LIB_BERKELEY_DB=$ac_cv_search___db_open],
 #		  AC_MSG_ERROR([Couldn't find required library in range db_cxx-4.2 through db_cxx-4.8]))
-AC_CHECK_LIB([db-4.6],[__db_open])
-LIB_BERKELEY_DB=-ldb-4.6
+AC_CHECK_LIB([db_cxx-4.6],[__db_open])
+LIB_BERKELEY_DB=-ldb_cxx-4.6
 AC_SUBST([LIB_BERKELEY_DB])
 LIBS=$gl_saved_libs
 

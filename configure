@@ -20297,13 +20297,13 @@ gl_saved_libs=$LIBS
 #		 [test "$ac_cv_search___db_open" = "none required" ||
 #		  LIB_BERKELEY_DB=$ac_cv_search___db_open],
 #		  AC_MSG_ERROR([Couldn't find required library in range db_cxx-4.2 through db_cxx-4.8]))
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for __db_open in -ldb-4.6" >&5
-$as_echo_n "checking for __db_open in -ldb-4.6... " >&6; }
-if test "${ac_cv_lib_db_4_6___db_open+set}" = set; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for __db_open in -ldb_cxx-4.6" >&5
+$as_echo_n "checking for __db_open in -ldb_cxx-4.6... " >&6; }
+if test "${ac_cv_lib_db_cxx_4_6___db_open+set}" = set; then :
   $as_echo_n "(cached) " >&6
 else
   ac_check_lib_save_LIBS=$LIBS
-LIBS="-ldb-4.6  $LIBS"
+LIBS="-ldb_cxx-4.6  $LIBS"
 cat confdefs.h - <<_ACEOF >conftest.$ac_ext
 /* end confdefs.h.  */
 
@@ -20323,26 +20323,26 @@ return __db_open ();
 }
 _ACEOF
 if ac_fn_cxx_try_link "$LINENO"; then :
-  ac_cv_lib_db_4_6___db_open=yes
+  ac_cv_lib_db_cxx_4_6___db_open=yes
 else
-  ac_cv_lib_db_4_6___db_open=no
+  ac_cv_lib_db_cxx_4_6___db_open=no
 fi
 rm -f core conftest.err conftest.$ac_objext \
     conftest$ac_exeext conftest.$ac_ext
 LIBS=$ac_check_lib_save_LIBS
 fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_db_4_6___db_open" >&5
-$as_echo "$ac_cv_lib_db_4_6___db_open" >&6; }
-if test "x$ac_cv_lib_db_4_6___db_open" = x""yes; then :
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_lib_db_cxx_4_6___db_open" >&5
+$as_echo "$ac_cv_lib_db_cxx_4_6___db_open" >&6; }
+if test "x$ac_cv_lib_db_cxx_4_6___db_open" = x""yes; then :
   cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBDB_4_6 1
+#define HAVE_LIBDB_CXX_4_6 1
 _ACEOF
 
-  LIBS="-ldb-4.6 $LIBS"
+  LIBS="-ldb_cxx-4.6 $LIBS"
 
 fi
 
-LIB_BERKELEY_DB=-ldb-4.6
+LIB_BERKELEY_DB=-ldb_cxx-4.6
 
 LIBS=$gl_saved_libs
 

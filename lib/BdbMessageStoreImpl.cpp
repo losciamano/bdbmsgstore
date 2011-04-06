@@ -78,7 +78,7 @@ BdbMessageStoreImpl::BdbMessageStoreImpl(qpid::sys::Timer& timer_, const char* e
 				 bdbwork(bdbserv)
 {}
 
-void BdbMessageStoreImpl::initManagement (Broker* broker)
+void BdbMessageStoreImpl::initManagement (qpid::broker::Broker* broker)
 {
     if (broker != 0) {
         agent = broker->getManagementAgent();
