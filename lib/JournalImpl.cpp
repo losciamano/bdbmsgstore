@@ -359,7 +359,6 @@ void JournalImpl::discard_transient_message() {
 		} else {
 			transientCount++;
 		}
-			
 	}
 	transientList.clear();
 	messageDb->sync(0);
@@ -415,8 +414,6 @@ void JournalImpl::enqueue_data(char* data_buff, const size_t /*tot_data_len*/, c
 void JournalImpl::dequeue_data(const uint64_t pid, const std::string&/* xid*/, const bool /*txn_coml_commit*/){
 	try {
 		remove_msg(messageDb,pid);
-		std::stringstream ss;
-		log(LOG_INFO,ss.str());
 	} catch (const DbException& e) {
 		THROW_STORE_EXCEPTION_2("Error removing the message",e);
 	}

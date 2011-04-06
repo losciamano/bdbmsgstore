@@ -187,10 +187,12 @@ test $db4_devel_fail == 1 && \
   AC_MSG_ERROR([db4-devel package missing. Please ensure both db4 and db4-devel are installed. (hint: "yum install db4-devel" should do it...)])
 
 gl_saved_libs=$LIBS
-AC_SEARCH_LIBS([__db_open], [db_cxx-4.8 db_cxx-4.7 db_cxx-4.6 db_cxx-4.5 db_cxx-4.4 db_cxx-4.3 db_cxx-4.2],
-		 [test "$ac_cv_search___db_open" = "none required" ||
-		  LIB_BERKELEY_DB=$ac_cv_search___db_open],
-		  AC_MSG_ERROR([Couldn't find required library in range db_cxx-4.2 through db_cxx-4.8]))
+#AC_SEARCH_LIBS([__db_open], [db_cxx-4.8 db_cxx-4.7 db_cxx-4.6 db_cxx-4.5 db_cxx-4.4 db_cxx-4.3 db_cxx-4.2],
+#		 [test "$ac_cv_search___db_open" = "none required" ||
+#		  LIB_BERKELEY_DB=$ac_cv_search___db_open],
+#		  AC_MSG_ERROR([Couldn't find required library in range db_cxx-4.2 through db_cxx-4.8]))
+AC_CHECK_LIB([db-4.6],[__db_open])
+LIB_BERKELEY_DB=-ldb-4.6
 AC_SUBST([LIB_BERKELEY_DB])
 LIBS=$gl_saved_libs
 

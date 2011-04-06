@@ -154,7 +154,8 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
                          txn_list& locked,
                          message_index& prepared,
                          long& rcnt,
-                         long& idcnt);
+                         long& idcnt,
+			 long& tcnt);
     qpid::broker::RecoverableMessage::shared_ptr getExternMessage(qpid::broker::RecoveryManager& recovery,
                                                                   uint64_t mId,
                                                                   unsigned& headerSize);

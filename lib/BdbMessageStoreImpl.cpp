@@ -53,7 +53,7 @@ namespace _qmf = qmf::com::redhat::rhm::store;
 const std::string BdbMessageStoreImpl::storeTopLevelDir("rhm"); // Sets the top-level store dir name
 // FIXME aconway 2010-03-09: was 10
 qpid::sys::Duration BdbMessageStoreImpl::defJournalGetEventsTimeout(1 * qpid::sys::TIME_MSEC); // 10ms
-qpid::sys::Duration BdbMessageStoreImpl::defJournalFlushTimeout(500 * qpid::sys::TIME_MSEC); // 0.5s
+qpid::sys::Duration BdbMessageStoreImpl::defJournalFlushTimeout(600 * qpid::sys::TIME_MSEC); // 0.6s
 qpid::sys::Mutex TxnCtxt::globalSerialiser;
 
 BdbMessageStoreImpl::TplRecoverStruct::TplRecoverStruct(const u_int64_t _rid,
@@ -618,13 +618,14 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
         {
             long rcnt = 0L;     // recovered msg count
             long idcnt = 0L;    // in-doubt msg count
+	    long tcnt = 0L;	//transient msg count 
             u_int64_t thisHighestRid = 0ULL;
-            thisHighestRid=recoverMessages(registry, queue, prepared, messages, rcnt, idcnt);
+            thisHighestRid=recoverMessages(registry, queue, prepared, messages, rcnt, idcnt,tcnt);
 	    if (highestRid == 0ULL)
                 highestRid = thisHighestRid;
             else if (thisHighestRid - highestRid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
                 highestRid = thisHighestRid;
-            QPID_LOG(info, "Recovered queue \"" << queueName << "\": " << rcnt << " messages recovered; " << idcnt << " messages in-doubt.");
+            QPID_LOG(info, "Recovered queue \"" << queueName << "\": " << rcnt << " messages recovered; " << idcnt << " messages in-doubt; "<<tcnt <<" messages mark as transient.");
             //jQueue->recover_complete(); // start journal.
         } catch (const journal::jexception& e) {
             THROW_STORE_EXCEPTION(std::string("Queue ") + queueName + ": recoverQueues() failed: " + e.what());
@@ -732,7 +733,8 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
                                       txn_list& /*prepared*/,
                                       message_index& /*messages*/,
                                       long& rcnt,
-				      long& /*idcnt*/
+				      long& /*idcnt*/,
+				      long& tcnt
 				      )
 
 {
@@ -767,6 +769,7 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
 				}
 			} else {
 				transientMsg.push_back(it->first);
+				tcnt++;
 			}
 			delete [] rawData;
 		}
