@@ -52,7 +52,7 @@ namespace _qmf = qmf::com::redhat::rhm::store;
 
 const std::string BdbMessageStoreImpl::storeTopLevelDir("rhm"); // Sets the top-level store dir name
 // FIXME aconway 2010-03-09: was 10
-qpid::sys::Duration BdbMessageStoreImpl::defJournalGetEventsTimeout(1 * qpid::sys::TIME_MSEC); // 10ms
+//qpid::sys::Duration BdbMessageStoreImpl::defJournalGetEventsTimeout(1 * qpid::sys::TIME_MSEC); // 10ms
 qpid::sys::Duration BdbMessageStoreImpl::defJournalFlushTimeout(600 * qpid::sys::TIME_MSEC); // 0.6s
 qpid::sys::Mutex TxnCtxt::globalSerialiser;
 
@@ -173,7 +173,7 @@ void BdbMessageStoreImpl::init()
                 txn.commit();
             } catch (...) { txn.abort(); throw; }
 
-            tplStorePtr.reset(new TplJournalImpl(timer, "TplStore", getTplBaseDir(), "tpl", defJournalGetEventsTimeout, defJournalFlushTimeout, agent,dbenv));
+            tplStorePtr.reset(new TplJournalImpl(timer, "TplStore", getTplBaseDir(), "tpl", /*defJournalGetEventsTimeout,*/ defJournalFlushTimeout, agent,dbenv));
 	    
 	    this->servThread=boost::shared_ptr<boost::thread>(new boost::thread(boost::bind(&boost::asio::io_service::run, &bdbserv)));
 	    QPID_LOG(info,"Journal io_service run");
@@ -299,8 +299,8 @@ BdbMessageStoreImpl::~BdbMessageStoreImpl()
     }
 }
 
-void BdbMessageStoreImpl::create(PersistableQueue& queue,
-                             const FieldTable&/* args*/)
+void BdbMessageStoreImpl::create(qpid::broker::PersistableQueue& queue,
+                             const qpid::framing::FieldTable&/* args*/)
 {
     checkInit();
     if (queue.getPersistenceId()) {
@@ -318,7 +318,7 @@ void BdbMessageStoreImpl::create(PersistableQueue& queue,
     ss << getBdbBaseDir() << getJrnlDir(queue);
     mrg::journal::jdir::create_dir(ss.str());
     jQueue = new JournalImpl(timer, queue.getName(), getJrnlDir(queue),getBdbBaseDir(),
-                             defJournalGetEventsTimeout, defJournalFlushTimeout, agent,dbenv,
+                             /*defJournalGetEventsTimeout,*/ defJournalFlushTimeout, agent,dbenv,
                              boost::bind(&BdbMessageStoreImpl::journalDeleted, this, _1));
     {
         qpid::sys::Mutex::ScopedLock sl(journalListLock);
@@ -341,7 +341,7 @@ void BdbMessageStoreImpl::create(PersistableQueue& queue,
     }
 }
 
-void BdbMessageStoreImpl::destroy(PersistableQueue& queue)
+void BdbMessageStoreImpl::destroy(qpid::broker::PersistableQueue& queue)
 {
     checkInit();
     destroy(queueDb, queue);
@@ -358,8 +358,8 @@ void BdbMessageStoreImpl::destroy(PersistableQueue& queue)
     }
 }
 
-void BdbMessageStoreImpl::create(const PersistableExchange& exchange,
-                             const FieldTable& /*args*/)
+void BdbMessageStoreImpl::create(const qpid::broker::PersistableExchange& exchange,
+                             const qpid::framing::FieldTable& /*args*/)
 {
     checkInit();
     if (exchange.getPersistenceId()) {
@@ -374,7 +374,7 @@ void BdbMessageStoreImpl::create(const PersistableExchange& exchange,
     }
 }
 
-void BdbMessageStoreImpl::destroy(const PersistableExchange& exchange)
+void BdbMessageStoreImpl::destroy(const qpid::broker::PersistableExchange& exchange)
 {
     checkInit();
     destroy(exchangeDb, exchange);
@@ -383,7 +383,7 @@ void BdbMessageStoreImpl::destroy(const PersistableExchange& exchange)
     bindingDb->del(0, &key, DB_AUTO_COMMIT);
 }
 
-void BdbMessageStoreImpl::create(const PersistableConfig& general)
+void BdbMessageStoreImpl::create(const qpid::broker::PersistableConfig& general)
 {
     checkInit();
     if (general.getPersistenceId()) {
@@ -398,7 +398,7 @@ void BdbMessageStoreImpl::create(const PersistableConfig& general)
     }
 }
 
-void BdbMessageStoreImpl::destroy(const PersistableConfig& general)
+void BdbMessageStoreImpl::destroy(const qpid::broker::PersistableConfig& general)
 {
     checkInit();
     destroy(generalDb, general);
@@ -406,7 +406,7 @@ void BdbMessageStoreImpl::destroy(const PersistableConfig& general)
 
 bool BdbMessageStoreImpl::create(db_ptr db,
                              IdSequence& seq,
-                             const Persistable& p)
+                             const qpid::broker::Persistable& p)
 {
     u_int64_t id (seq.next());
     Dbt key(&id, sizeof(id));
@@ -430,17 +430,17 @@ bool BdbMessageStoreImpl::create(db_ptr db,
     }
 }
 
-void BdbMessageStoreImpl::destroy(db_ptr db, const Persistable& p)
+void BdbMessageStoreImpl::destroy(db_ptr db, const qpid::broker::Persistable& p)
 {
     IdDbt key(p.getPersistenceId());
     db->del(0, &key, DB_AUTO_COMMIT);
 }
 
 
-void BdbMessageStoreImpl::bind(const PersistableExchange& e,
-                           const PersistableQueue& q,
+void BdbMessageStoreImpl::bind(const qpid::broker::PersistableExchange& e,
+                           const qpid::broker::PersistableQueue& q,
                            const std::string& k,
-                           const FieldTable& a)
+                           const qpid::framing::FieldTable& a)
 {
     checkInit();
     IdDbt key(e.getPersistenceId());
@@ -456,16 +456,16 @@ void BdbMessageStoreImpl::bind(const PersistableExchange& e,
     }
 }
 
-void BdbMessageStoreImpl::unbind(const PersistableExchange& e,
-                             const PersistableQueue& q,
+void BdbMessageStoreImpl::unbind(const qpid::broker::PersistableExchange& e,
+                             const qpid::broker::PersistableQueue& q,
                              const std::string& k,
-                             const FieldTable&)
+                             const qpid::framing::FieldTable&)
 {
     checkInit();
     deleteBinding(e, q, k);
 }
 
-void BdbMessageStoreImpl::recover(RecoveryManager& registry)
+void BdbMessageStoreImpl::recover(qpid::broker::RecoveryManager& registry)
 {
     checkInit();
     txn_list prepared;
@@ -577,7 +577,7 @@ void BdbMessageStoreImpl::recover(RecoveryManager& registry)
 }
 
 void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
-                                    RecoveryManager& registry,
+                                    qpid::broker::RecoveryManager& registry,
                                     queue_index& queue_index,
                                     txn_list& prepared,
                                     message_index& messages)
@@ -605,7 +605,7 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
             break;
         }
         jQueue = new JournalImpl(timer, queueName, getJrnlHashDir(queueName), getBdbBaseDir(),
-                                 defJournalGetEventsTimeout, defJournalFlushTimeout,agent,dbenv,
+                                 /*defJournalGetEventsTimeout,*/ defJournalFlushTimeout,agent,dbenv,
                                  boost::bind(&BdbMessageStoreImpl::journalDeleted, this, _1));
         {
             qpid::sys::Mutex::ScopedLock sl(journalListLock);
@@ -647,7 +647,7 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
 
 
 void BdbMessageStoreImpl::recoverExchanges(TxnCtxt& txn,
-                                       RecoveryManager& registry,
+                                       qpid::broker::RecoveryManager& registry,
                                        exchange_index& index)
 {
     //TODO: this is a copy&paste from recoverQueues - refactor!
@@ -708,7 +708,7 @@ void BdbMessageStoreImpl::recoverBindings(TxnCtxt& txn,
 }
 
 void BdbMessageStoreImpl::recoverGeneral(TxnCtxt& txn,
-                                     RecoveryManager& registry)
+                                     qpid::broker::RecoveryManager& registry)
 {
     Cursor items;
     items.open(generalDb, txn.get());
@@ -789,7 +789,7 @@ RecoverableMessage::shared_ptr BdbMessageStoreImpl::getExternMessage(qpid::broke
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "getExternMessage");
 }
 
-int BdbMessageStoreImpl::enqueueMessage(TxnCtxt& txn,
+/*int BdbMessageStoreImpl::enqueueMessage(TxnCtxt& txn,
                                     IdDbt& msgId,
                                     RecoverableMessage::shared_ptr& msg,
                                     queue_index& index,
@@ -818,7 +818,7 @@ int BdbMessageStoreImpl::enqueueMessage(TxnCtxt& txn,
     }
     mappings.close();
     return count;
-}
+}*/
 
 void BdbMessageStoreImpl::readTplStore()
 {
@@ -946,24 +946,24 @@ void BdbMessageStoreImpl::collectPreparedXids(std::set<std::string>&/* xids*/)
     }*/
 }
 
-void BdbMessageStoreImpl::stage(const intrusive_ptr<PersistableMessage>& /*msg*/)
+void BdbMessageStoreImpl::stage(const boost::intrusive_ptr<qpid::broker::PersistableMessage>& /*msg*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "stage");
 }
 
-void BdbMessageStoreImpl::destroy(PersistableMessage& /*msg*/)
+void BdbMessageStoreImpl::destroy(qpid::broker::PersistableMessage& /*msg*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "destroy");
 }
 
-void BdbMessageStoreImpl::appendContent(const intrusive_ptr<const PersistableMessage>& /*msg*/,
+void BdbMessageStoreImpl::appendContent(const boost::intrusive_ptr<const qpid::broker::PersistableMessage>& /*msg*/,
                                     const std::string& /*data*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "appendContent");
 }
 
 void BdbMessageStoreImpl::loadContent(const qpid::broker::PersistableQueue& queue,
-                                  const intrusive_ptr<const PersistableMessage>& msg,
+                                  const boost::intrusive_ptr<const qpid::broker::PersistableMessage>& msg,
                                   std::string& data,
                                   u_int64_t offset,
                                   u_int32_t length)
@@ -1009,9 +1009,9 @@ void BdbMessageStoreImpl::flush(const qpid::broker::PersistableQueue& queue)
     }
 }
 
-void BdbMessageStoreImpl::enqueue(TransactionContext* ctxt,
-                              const intrusive_ptr<PersistableMessage>& msg,
-                              const PersistableQueue& queue)
+void BdbMessageStoreImpl::enqueue(qpid::broker::TransactionContext* ctxt,
+                              const boost::intrusive_ptr<qpid::broker::PersistableMessage>& msg,
+                              const qpid::broker::PersistableQueue& queue)
 {
     checkInit();
     u_int64_t queueId (queue.getPersistenceId());
@@ -1040,7 +1040,7 @@ void BdbMessageStoreImpl::enqueue(TransactionContext* ctxt,
     if (ctxt) txn->addXidRecord(queue.getExternalQueueStore());
 }
 
-u_int64_t BdbMessageStoreImpl::msgEncode(std::vector<char>& buff, const intrusive_ptr<PersistableMessage>& message)
+u_int64_t BdbMessageStoreImpl::msgEncode(std::vector<char>& buff, const boost::intrusive_ptr<qpid::broker::PersistableMessage>& message)
 {
     u_int32_t headerSize = message->encodedHeaderSize();
     u_int64_t size = message->encodedSize() + sizeof(u_int32_t)+ sizeof(u_int8_t);
@@ -1057,9 +1057,9 @@ u_int64_t BdbMessageStoreImpl::msgEncode(std::vector<char>& buff, const intrusiv
     return size;
 }
 
-void BdbMessageStoreImpl::store(const PersistableQueue* queue,
+void BdbMessageStoreImpl::store(const qpid::broker::PersistableQueue* queue,
                             TxnCtxt* txn,
-                            const intrusive_ptr<PersistableMessage>& message,
+                            const boost::intrusive_ptr<qpid::broker::PersistableMessage>& message,
                             bool /*newId*/)
 {
     std::vector<char> buff;
@@ -1081,9 +1081,9 @@ void BdbMessageStoreImpl::store(const PersistableQueue* queue,
     }
 }
 
-void BdbMessageStoreImpl::dequeue(TransactionContext* ctxt,
-                              const intrusive_ptr<PersistableMessage>& msg,
-                              const PersistableQueue& queue)
+void BdbMessageStoreImpl::dequeue(qpid::broker::TransactionContext* ctxt,
+                              const boost::intrusive_ptr<qpid::broker::PersistableMessage>& msg,
+                              const qpid::broker::PersistableQueue& queue)
 {
     checkInit();
     u_int64_t queueId (queue.getPersistenceId());
@@ -1110,9 +1110,9 @@ void BdbMessageStoreImpl::dequeue(TransactionContext* ctxt,
     msg->dequeueComplete();
 }
 
-void BdbMessageStoreImpl::async_dequeue(TransactionContext* ctxt,
-                                    const intrusive_ptr<PersistableMessage>& msg,
-                                    const PersistableQueue& queue)
+void BdbMessageStoreImpl::async_dequeue(qpid::broker::TransactionContext* ctxt,
+                                    const boost::intrusive_ptr<qpid::broker::PersistableMessage>& msg,
+                                    const qpid::broker::PersistableQueue& queue)
 {
     std::string tid;
     if (ctxt) {
@@ -1223,7 +1223,7 @@ void BdbMessageStoreImpl::localPrepare(TxnCtxt* /*ctxt*/)
     }*/
 }
 
-void BdbMessageStoreImpl::commit(TransactionContext& /*ctxt*/)
+void BdbMessageStoreImpl::commit(qpid::broker::TransactionContext& /*ctxt*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "commit");
     /*TODO: implement transaction
@@ -1237,7 +1237,7 @@ void BdbMessageStoreImpl::commit(TransactionContext& /*ctxt*/)
     */
 }
 
-void BdbMessageStoreImpl::abort(TransactionContext& /*ctxt*/)
+void BdbMessageStoreImpl::abort(qpid::broker::TransactionContext& /*ctxt*/)
 {
     throw mrg::journal::jexception(mrg::journal::jerrno::JERR__NOTIMPL, "BdbMessageStoreImpl", "abort");
     /* TODO: implement transaction
@@ -1250,7 +1250,7 @@ void BdbMessageStoreImpl::abort(TransactionContext& /*ctxt*/)
     completed(*dynamic_cast<TxnCtxt*>(txn), false);*/
 }
 
-TxnCtxt* BdbMessageStoreImpl::check(TransactionContext* ctxt)
+TxnCtxt* BdbMessageStoreImpl::check(qpid::broker::TransactionContext* ctxt)
 {
     TxnCtxt* txn = dynamic_cast<TxnCtxt*>(ctxt);
     if(!txn) throw InvalidTransactionContextException();
@@ -1274,7 +1274,7 @@ void BdbMessageStoreImpl::put(db_ptr db,
     }
 }
 
-void BdbMessageStoreImpl::deleteBindingsForQueue(const PersistableQueue& queue)
+void BdbMessageStoreImpl::deleteBindingsForQueue(const qpid::broker::PersistableQueue& queue)
 {
     TxnCtxt txn;
     txn.begin(dbenv.get(), true);
@@ -1308,8 +1308,8 @@ void BdbMessageStoreImpl::deleteBindingsForQueue(const PersistableQueue& queue)
     QPID_LOG(debug, "Deleted all bindings for " << queue.getName() << ":" << queue.getPersistenceId());
 }
 
-void BdbMessageStoreImpl::deleteBinding(const PersistableExchange& exchange,
-                                    const PersistableQueue& queue,
+void BdbMessageStoreImpl::deleteBinding(const qpid::broker::PersistableExchange& exchange,
+                                    const qpid::broker::PersistableQueue& queue,
                                     const std::string& bkey)
 {
     TxnCtxt txn;

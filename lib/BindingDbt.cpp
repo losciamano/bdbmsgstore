@@ -30,7 +30,8 @@ using qpid::framing::FieldTable;
 using std::string;
 
 
-BindingDbt::BindingDbt(const PersistableExchange& e, const PersistableQueue& q, const string& k, const FieldTable& a)
+BindingDbt::BindingDbt(const qpid::broker::PersistableExchange& e, const qpid::broker::PersistableQueue& q,
+			const std::string& k, const qpid::framing::FieldTable& a)
   : data(new char[encodedSize(e, q, k, a)]),
     buffer(data, encodedSize(e, q, k, a))
 {
@@ -48,7 +49,8 @@ BindingDbt::~BindingDbt()
   delete [] data;
 }
 
-uint32_t BindingDbt::encodedSize(const PersistableExchange& /*not used*/, const PersistableQueue& q, const string& k, const FieldTable& a)
+uint32_t BindingDbt::encodedSize(const qpid::broker::PersistableExchange& /*not used*/, const qpid::broker::PersistableQueue& q,
+					const std::string& k, const qpid::framing::FieldTable& a)
 {
     return 8 /*queue id*/ + q.getName().size() + 1 + k.size() + 1 + a.encodedSize();
 }

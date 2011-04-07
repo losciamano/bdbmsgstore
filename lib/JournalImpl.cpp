@@ -53,23 +53,25 @@ InactivityFireEvent::InactivityFireEvent(JournalImpl* p, const qpid::sys::Durati
 
 void InactivityFireEvent::fire() { qpid::sys::Mutex::ScopedLock sl(_ife_lock); if (_parent) _parent->flushFire(); }
 
+/*
 GetEventsFireEvent::GetEventsFireEvent(JournalImpl* p, const qpid::sys::Duration timeout):
     qpid::sys::TimerTask(timeout, "JournalGetEvents:"+p->id()), _parent(p) {}
 
 void GetEventsFireEvent::fire() { qpid::sys::Mutex::ScopedLock sl(_gefe_lock); if (_parent) _parent->getEventsFire(); }
+*/
 
 JournalImpl::JournalImpl(qpid::sys::Timer& timer_,
                          const std::string& journalId,
                          const std::string& journalDirectory,
                          const std::string& bdbDir,
-                         const qpid::sys::Duration getEventsTimeout,
+                         //const qpid::sys::Duration getEventsTimeout,
                          const qpid::sys::Duration flushTimeout,
                          qpid::management::ManagementAgent* a,
 			 boost::shared_ptr<DbEnv>& de,
                          DeleteCallback onDelete)
 			 :
                          timer(timer_),
-                         getEventsTimerSetFlag(false),
+                         //getEventsTimerSetFlag(false),
                          writeActivityFlag(false),
                          flushTriggeredFlag(true),
 			 _is_init(false),
@@ -81,7 +83,7 @@ JournalImpl::JournalImpl(qpid::sys::Timer& timer_,
                          _mgmtObject(0),
                          deleteCallback(onDelete)
 {
-    getEventsFireEventsPtr = new GetEventsFireEvent(this, getEventsTimeout);
+    //getEventsFireEventsPtr = new GetEventsFireEvent(this, getEventsTimeout);
     inactivityFireEventPtr = new InactivityFireEvent(this, flushTimeout);
     {
         timer.start();
@@ -115,7 +117,7 @@ JournalImpl::~JournalImpl()
     	try { stop(true); } // NOTE: This will *block* until all outstanding disk aio calls are complete!
         catch (const jexception& e) { log(LOG_ERROR, e.what()); }
 	}*/
-    getEventsFireEventsPtr->cancel();
+    //getEventsFireEventsPtr->cancel();
     inactivityFireEventPtr->cancel();
 
     if (_mgmtObject != 0) {
@@ -471,7 +473,7 @@ JournalImpl::flush()
     }
 }
 
-bool JournalImpl::is_enqueued(const uint64_t rid,bool /*ignore_lock*/) {
+bool JournalImpl::is_enqueued(const u_int64_t rid,bool /*ignore_lock*/) {
 	u_int64_t id(rid);	
 	Dbt key(&id, sizeof(id));
 	if (messageDb->exists(0,&key,0)!=DB_NOTFOUND) {
@@ -502,14 +504,14 @@ JournalImpl::log(mrg::journal::log_level ll, const char* const log_stmt) const
     }
 }
 
-void
+/*void
 JournalImpl::getEventsFire()
 {
     qpid::sys::Mutex::ScopedLock sl(_getf_lock);
     getEventsTimerSetFlag = false;
     //if (_wmgr.get_aio_evt_rem()) { jcntl::get_wr_events(0); }
     //if (_wmgr.get_aio_evt_rem()) { setGetEventTimer(); }
-}
+}*/
 
 void
 JournalImpl::flushFire()

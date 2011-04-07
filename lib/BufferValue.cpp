@@ -38,7 +38,7 @@ BufferValue::BufferValue(u_int32_t size, u_int64_t offset)
     set_ulen(size);
 }
 
-BufferValue::BufferValue(const Persistable& p)
+BufferValue::BufferValue(const qpid::broker::Persistable& p)
   : data(new char[p.encodedSize()]),
     buffer(data, p.encodedSize())
 {
