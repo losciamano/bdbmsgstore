@@ -33,12 +33,26 @@ namespace broker {
 
 using namespace std;
 
+/**
+*	Struct extending QPID Plugin used to declare the bdbmsgstore as QPID Broker Plugin.
+**/
 struct BdbStorePlugin : public Plugin {
 
+    /**
+    *	Store plugin options
+    **/
     mrg::msgstore::BdbMessageStoreImpl::StoreOptions options;
-
+    
+    /**
+    *	Method to obtain the plugin options.
+    *	@return	Pointer to the plugin options.
+    **/
     Options* getOptions() { return &options; }
 
+    /**
+    *	This method is called by the broker before starting and check the options and initialize the plugin.
+    *	@param	target	A reference to a QPID plugin Target
+    **/
     void earlyInitialize (Plugin::Target& target)
     {
         Broker* broker = dynamic_cast<Broker*>(&target);
@@ -59,19 +73,30 @@ struct BdbStorePlugin : public Plugin {
         static_cast<mrg::msgstore::BdbMessageStoreImpl*>(sp)->initManagement(broker);
     }
 
+    /**
+    *	This method is intentionally left blank
+    **/
     void initialize(Plugin::Target&)
     {
         // This function intentionally left blank
     }
-
+    /**
+    *	This method is intentionally left blank
+    **/
     void finalize()
     {
         // This function intentionally left blank
     }
-
+    /**
+    *	The method returns the identifier of the plugin.
+    *	@return	Char array containing the string "BdbStorePlugin"
+    **/
     const char* id() {return "BdbStorePlugin";}
 };
 
+/**
+*	Static instance of the BdbStorePlugin
+**/
 static BdbStorePlugin instance; // Static initialization.
 
 }} // namespace qpid::broker

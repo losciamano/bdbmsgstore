@@ -381,16 +381,19 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     /**
     *	Method to read the Transaction Prepared List.
     *	This method is empty in this implementation.
+    *	\todo	Implement this method to support QPID transaction system
     **/
     void readTplStore();
     /**
     *	Method to recover the Transaction Prepared List.
     *	This method is empty in this implementation.
+    *	\todo	Implement this method to support QPID transaction system
     **/
     void recoverTplStore();
     /**
     *	Method to Recover Locked Mappings.
     *	This method is empty in this implementation.
+    *	\todo	Implement this method to support QPID transaction system
     **/
     void recoverLockedMappings(txn_list& txns);
     /**
@@ -454,6 +457,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     *	This method is empty in the current implementation.
     *	@param	txn	Unused parameter.
     *	@param  commit	Unused parameter.
+    *	\todo	Implement this method to support QPID transaction system
     **/
     void completed(TxnCtxt& txn,
                    bool commit);
@@ -676,6 +680,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     *	After the recovery phase, this method drops all the transient messages (using discard_transient_message) and compact the database for
     *	each Journal recovered.
     *	@param	registry	Reference to QPID recovery manager used to recover QPID objects.
+    *	\todo	Create transaction data structures and implement Transaction Recovery to support QPID transaction systems
     **/
     void recover(qpid::broker::RecoveryManager& registry);
     /**
@@ -751,14 +756,14 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     /**
     *	This method is empty in this implementation.
     *	@param	xids	Unused parameter
-    *	\todo	Implement Transaction
+    *	\todo	Implement this method to support QPID transacton System
     **/
     void collectPreparedXids(std::set<std::string>& xids);
     /**
     *	This method will always throws mrg::journal::jexception for unimplemented method.
     *	@return	Always throws, no return
     *	@throws	mrg::journal::jexception	Unimplemented Method.
-    *	\todo	Implement method to support transaction
+    *	\todo	Implement method to support QPID Transaction system
     **/
     std::auto_ptr<qpid::broker::TransactionContext> begin();
     /**
@@ -766,35 +771,35 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     *	@param	xid	Unused parameter.
     *	@return Always throws, no return
     *	@throws mrg::journal::jexception	Unimplemented method
-    *	\todo	Implement method to support transaction
+    *	\todo	Implement method to support QPID transaction system
     **/
     std::auto_ptr<qpid::broker::TPCTransactionContext> begin(const std::string& xid);
     /**
     *	This metod will always throws mrg::journal::jexception for unimplemented method
     *	@param	ctxt	Unused parameter.
     *	@throws mrg::journal::jexception	Unimplemented method
-    *	\todo	Implement method to support transaction
+    *	\todo	Implement method to support QPID transaction system
     **/
     void prepare(qpid::broker::TPCTransactionContext& ctxt);
     /**
     *	This metod will always throws mrg::journal::jexception for unimplemented method
     *	@param	ctxt	Unused parameter.
     *	@throws mrg::journal::jexception	Unimplemented method
-    *	\todo	Implement method to support transaction
+    *	\todo	Implement method to support QPID trnsaction system
     **/
     void localPrepare(TxnCtxt* ctxt);
     /**
     *	This metod will always throws mrg::journal::jexception for unimplemented method
     *	@param	ctxt	Unused parameter.
     *	@throws mrg::journal::jexception	Unimplemented method
-    *	\todo	Implement method to support transaction
+    *	\todo	Implement method to support QPID transaction commit
     **/
     void commit(qpid::broker::TransactionContext& ctxt);
     /**
     *	This metod will always throws mrg::journal::jexception for unimplemented method
     *	@param	ctxt	Unused parameter.
     *	@throws mrg::journal::jexception	Unimplemented method
-    *	\todo	Implement method to support transaction
+    *	\todo	Implement method to support QPID transaction abort
     **/
     void abort(qpid::broker::TransactionContext& ctxt);
     /**
