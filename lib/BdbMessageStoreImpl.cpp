@@ -809,10 +809,8 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
 					headerBuff.reset();
 					std::string msgUid=message->getApplicationHeaders()->getAsString("UID");
 					if (!msgUid.empty()) {
-						std::cout<<"UID => "<<msgUid<<std::endl;
 						std::vector<std::string>::iterator msgIt=std::find(acceptedMsg.begin(),acceptedMsg.end(),msgUid);	
 						if (msgIt!=acceptedMsg.end()) {
-							std::cout<<*msgIt<<std::endl;
 							innerAcceptedMsg.push_back(it->first);
 							foundMsg.push_back(*msgIt);
 							acnt++;
