@@ -175,6 +175,10 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     *	List containing persistence Id of the transient messages that will be deleted on the next call of discard_transient_message() method
     **/
     std::list<uint64_t> transientList;
+    /**
+    *	List containing persistence Id of the accepted messages that will be deleted on the next call of discard_accepted_message() method
+    **/
+    std::list<uint64_t> acceptedList;
     
   public:
     /**
@@ -375,6 +379,11 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     **/
     void discard_transient_message();
     /**
+    *	The method is used to remove accepted messages from the database.
+    *	This method is called at the end of the recovery phase to remove all message stored and accepted while the broker is down.
+    **/
+    void discard_accepted_message();
+    /**
     *	The method compacts the Berkeley Database used by the Journal (if the option is enabled)
     *	This method uses the Berkeley Database API to execute the operation; a compacted database will free pages returning them to the filesystem.
     **/
@@ -408,6 +417,13 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
     *	@param	trList	The vector containings the persistence Ids of the messages to register as transient.
     **/
     void register_as_transient(std::vector<uint64_t>& trList);
+    /*+
+    *	The methos is called by the Store when find messages that have been accepted while Broker is down and those message have to be deleted.
+    *	This method takes some message's persistence Id and inserts it in the internal data structure for the accepted messages and all the messages
+    *	will be deleted at the next call of the discard_accepted_message method.
+    *	@param	trList	The vector containings the persistence Ids of the messages to register as accepted.
+    **/
+    void register_as_accepted(std::vector<uint64_t>& acList);
     /**
     *	The method is called by the Store when a queue is destroyed.
     *	This method close the Berkeley Database, removes it from the Environment and the delete from the filesystem the directory containing the

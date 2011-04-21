@@ -31,8 +31,13 @@
 #include "qpid/log/Statement.h"
 #include "qmf/com/redhat/rhm/store/Package.h"
 #include "StoreException.h"
+#include "mongo/client/dbclient.h"
+#include "mongo/bson/util/builder.h"
+#include "mongo/client/connpool.h"
 #include <dirent.h>
+#include <iterator>
 #include <vector>
+#include <algorithm>
 #include <utility>
 
 #define MAX_AIO_SLEEPS 100000 // tot: ~1 sec
@@ -53,7 +58,7 @@ namespace _qmf = qmf::com::redhat::rhm::store;
 const std::string BdbMessageStoreImpl::storeTopLevelDir("rhm"); // Sets the top-level store dir name
 // FIXME aconway 2010-03-09: was 10
 //qpid::sys::Duration BdbMessageStoreImpl::defJournalGetEventsTimeout(1 * qpid::sys::TIME_MSEC); // 10ms
-qpid::sys::Duration BdbMessageStoreImpl::defJournalFlushTimeout(600 * qpid::sys::TIME_MSEC); // 0.6s
+qpid::sys::Duration BdbMessageStoreImpl::defJournalFlushTimeout(500 * qpid::sys::TIME_MSEC); // 0.5s
 qpid::sys::Mutex TxnCtxt::globalSerialiser;
 
 BdbMessageStoreImpl::TplRecoverStruct::TplRecoverStruct(const u_int64_t _rid,
@@ -69,6 +74,11 @@ BdbMessageStoreImpl::TplRecoverStruct::TplRecoverStruct(const u_int64_t _rid,
 BdbMessageStoreImpl::BdbMessageStoreImpl(qpid::sys::Timer& timer_, const char* envpath) :
                                  truncateFlag(false),
 				 compactFlag(true),
+				 enableAcceptRecoveryFlag(true),
+			         acceptRecoveryMongoHost("localhost"),
+				 acceptRecoveryMongoPort("27017"),
+				 acceptRecoveryMongoDb("distributed_commons"),
+				 acceptRecoveryMongoCollection("accept_recovery"),
                                  highestRid(0),
                                  isInit(false),
                                  envPath(envpath),
@@ -98,6 +108,11 @@ bool BdbMessageStoreImpl::init(const qpid::Options* options)
     // Extract and check options
     const StoreOptions* opts = static_cast<const StoreOptions*>(options);
     this->compactFlag=opts->compactFlag;
+    this->enableAcceptRecoveryFlag=opts->enableAcceptRecoveryFlag;
+    this->acceptRecoveryMongoHost=opts->acceptRecoveryMongoHost;
+    this->acceptRecoveryMongoPort=opts->acceptRecoveryMongoPort;
+    this->acceptRecoveryMongoDb=opts->acceptRecoveryMongoDb;
+    this->acceptRecoveryMongoCollection=opts->acceptRecoveryMongoCollection;
 
     // Pass option values to init(...)
     return init(opts->storeDir);
@@ -467,6 +482,7 @@ void BdbMessageStoreImpl::unbind(const qpid::broker::PersistableExchange& e,
 
 void BdbMessageStoreImpl::recover(qpid::broker::RecoveryManager& registry)
 {
+    QPID_LOG(notice,"Start Recovery...");
     checkInit();
     txn_list prepared;
     recoverLockedMappings(prepared);
@@ -498,8 +514,9 @@ void BdbMessageStoreImpl::recover(qpid::broker::RecoveryManager& registry)
     }
     
     //Delete transient message from recovered journal db
-    for (std::list<JournalImpl*>::iterator it=this->recoveredJournal.begin();it!=recoveredJournal.end();it++) {
+    for (std::list<JournalImpl*>::iterator it=this->recoveredJournal.begin();it!=recoveredJournal.end();it++) {	
     	(*it)->discard_transient_message();
+	(*it)->discard_accepted_message();
 	if (compactFlag) {
 		(*it)->compact_message_database();
 	}
@@ -573,7 +590,7 @@ void BdbMessageStoreImpl::recover(qpid::broker::RecoveryManager& registry)
         }
     }*/
     registry.recoveryComplete();
-    QPID_LOG(info,"Restore complete!");
+    QPID_LOG(notice,"Restore complete!");
 }
 
 void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
@@ -584,6 +601,22 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
 {
     Cursor queues;
     queues.open(queueDb, txn.get());
+
+
+    std::vector< std::string > acceptedFromMongo;
+    std::vector< std::string > toBeDeleteFromMongo;
+    if (this->enableAcceptRecoveryFlag) { //Check if enable_accept_recover is true			
+	    string collection=this->acceptRecoveryMongoDb+"."+this->acceptRecoveryMongoCollection;
+	    string mongo_addr=this->acceptRecoveryMongoHost + ":" + this->acceptRecoveryMongoPort;
+	    boost::shared_ptr<mongo::ScopedDbConnection> con = boost::shared_ptr<mongo::ScopedDbConnection>(new mongo::ScopedDbConnection(mongo_addr));
+	    mongo::DBClientBase* c = con->get();
+	    QPID_LOG(notice,"Loading accepted messages from MongoDb "+collection+" at "+mongo_addr);
+	    auto_ptr<mongo::DBClientCursor> cursor =c->query(collection,mongo::Query("{}"));
+	    while (cursor->more()) {
+		    acceptedFromMongo.push_back(std::string(cursor->next().getStringField("UID")));
+	    }
+	    con->done();
+    }
 
     u_int64_t maxQueueId(1);
 
@@ -617,15 +650,15 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
         try
         {
             long rcnt = 0L;     // recovered msg count
-            long idcnt = 0L;    // in-doubt msg count
+            long acnt = 0L;    // accepted msg count
 	    long tcnt = 0L;	//transient msg count 
             u_int64_t thisHighestRid = 0ULL;
-            thisHighestRid=recoverMessages(registry, queue, prepared, messages, rcnt, idcnt,tcnt);
+            thisHighestRid=recoverMessages(registry, queue, prepared, messages,acceptedFromMongo,toBeDeleteFromMongo, rcnt, acnt,tcnt);
 	    if (highestRid == 0ULL)
                 highestRid = thisHighestRid;
             else if (thisHighestRid - highestRid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
                 highestRid = thisHighestRid;
-            QPID_LOG(info, "Recovered queue \"" << queueName << "\": " << rcnt << " messages recovered; " << idcnt << " messages in-doubt; "<<tcnt <<" messages mark as transient.");
+            QPID_LOG(notice, "Recovered queue \"" << queueName << "\": " << rcnt << " messages recovered; " << acnt << " accepted while down; "<<tcnt <<" mark as transient.");
             //jQueue->recover_complete(); // start journal.
         } catch (const journal::jexception& e) {
             THROW_STORE_EXCEPTION(std::string("Queue ") + queueName + ": recoverQueues() failed: " + e.what());
@@ -635,6 +668,19 @@ void BdbMessageStoreImpl::recoverQueues(TxnCtxt& txn,
         queue_index[key.id] = queue;
         maxQueueId = max(key.id, maxQueueId);
     }
+
+    if (this->enableAcceptRecoveryFlag) { //Check if enable_accept_recover is true			
+	    string collection=this->acceptRecoveryMongoDb+"."+this->acceptRecoveryMongoCollection;
+	    string mongo_addr=this->acceptRecoveryMongoHost + ":" + this->acceptRecoveryMongoPort;
+	    boost::shared_ptr<mongo::ScopedDbConnection> con = boost::shared_ptr<mongo::ScopedDbConnection>(new mongo::ScopedDbConnection(mongo_addr));
+	    mongo::DBClientBase* c = con->get();
+	    QPID_LOG(notice,"Deleting accepted messages from MongoDb "+collection+" at "+mongo_addr);
+	    for (std::vector<std::string>::iterator acIt=toBeDeleteFromMongo.begin();acIt!=toBeDeleteFromMongo.end();acIt++) {
+	    	c->remove(collection,BSON("UID"<<*acIt));
+	    }
+	    con->done();
+    }
+
 
     // NOTE: highestRid is set by both recoverQueues() and recoverTplStore() as
     // the messageIdSequence is used for both queue journals and the tpl journal.
@@ -732,11 +778,12 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
                                       qpid::broker::RecoverableQueue::shared_ptr& queue,
                                       txn_list& /*prepared*/,
                                       message_index& /*messages*/,
+				      std::vector<std::string>& acceptedMsg,
+				      std::vector<std::string>& foundMsg,
                                       long& rcnt,
-				      long& /*idcnt*/,
+				      long& acnt,
 				      long& tcnt
 				      )
-
 {
 	uint64_t maxRid=0ULL;
 	try {
@@ -744,6 +791,7 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
 		JournalImpl* jc = static_cast<JournalImpl*>(queue->getExternalQueueStore());
 		std::vector< std::pair <uint64_t,std::string> > recovered;
 		std::vector< uint64_t > transientMsg;
+		std::vector< uint64_t > innerAcceptedMsg;
 		jc->recoverMessages(recovered);
 		for (std::vector< std::pair <uint64_t,std::string> >::iterator it=recovered.begin();it<recovered.end();it++) {
 			char* rawData= new char[it->second.size()];
@@ -754,18 +802,40 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
 			if (!transientFlag) {
 				u_int32_t headerSize=msgBuff.getLong();
 				Buffer headerBuff(msgBuff.getPointer()+preambleLength,headerSize);
-				msg = recovery.recoverMessage(headerBuff);
-				msg->setPersistenceId(it->first);
-				maxRid=max(it->first,maxRid);
-				msg->setRedelivered();
-				uint32_t contentOffset = headerSize + preambleLength;
-				uint64_t contentSize = msgBuff.getSize() - contentOffset;
-				if (msg->loadContent(contentSize)) {
-				    //now read the content
-				    Buffer contentBuff(msgBuff.getPointer() + contentOffset, contentSize);
-				    msg->decodeContent(contentBuff);
-				    rcnt++;
-				    queue->recover(msg);
+				bool toRecover=true;
+				if (this->enableAcceptRecoveryFlag) { //Check if enable_accept_recover is true
+					boost::shared_ptr<qpid::broker::Message> message(new qpid::broker::Message());
+					message->decodeHeader(headerBuff);
+					headerBuff.reset();
+					std::string msgUid=message->getApplicationHeaders()->getAsString("UID");
+					if (!msgUid.empty()) {
+						std::cout<<"UID => "<<msgUid<<std::endl;
+						std::vector<std::string>::iterator msgIt=std::find(acceptedMsg.begin(),acceptedMsg.end(),msgUid);	
+						if (msgIt!=acceptedMsg.end()) {
+							std::cout<<*msgIt<<std::endl;
+							innerAcceptedMsg.push_back(it->first);
+							foundMsg.push_back(*msgIt);
+							acnt++;
+							toRecover=false;
+						}
+					}
+				}
+				if (toRecover) {
+					msg = recovery.recoverMessage(headerBuff);
+					msg->setPersistenceId(it->first);
+					maxRid=max(it->first,maxRid);
+					msg->setRedelivered();
+					uint32_t contentOffset = headerSize + preambleLength;
+					uint64_t contentSize = msgBuff.getSize() - contentOffset;
+					if (msg->loadContent(contentSize)) {
+					    //now read the content
+					    Buffer contentBuff(msgBuff.getPointer() + contentOffset, contentSize);
+					    msg->decodeContent(contentBuff);
+					    
+					    rcnt++;
+					    //The following instruction will recover.
+					    queue->recover(msg);
+					}
 				}
 			} else {
 				transientMsg.push_back(it->first);
@@ -774,7 +844,9 @@ uint64_t BdbMessageStoreImpl::recoverMessages(qpid::broker::RecoveryManager& rec
 			delete [] rawData;
 		}
 		jc->register_as_transient(transientMsg);
+		jc->register_as_accepted(innerAcceptedMsg);
 		transientMsg.clear();
+		acceptedMsg.clear();
 		recovered.clear();
     	} catch (const journal::jexception& e) {
 	        THROW_STORE_EXCEPTION(std::string("Queue ") + queue->getName() + ": recoverMessages() failed: " + e.what());
@@ -1405,7 +1477,12 @@ void BdbMessageStoreImpl::journalDeleted(JournalImpl& j) {
 BdbMessageStoreImpl::StoreOptions::StoreOptions(const std::string& name) :
                                              qpid::Options(name),
                                              truncateFlag(defTruncateFlag),
-					     compactFlag(true)
+					     compactFlag(true),
+					     enableAcceptRecoveryFlag(true),
+					     acceptRecoveryMongoHost("localhost"),
+					     acceptRecoveryMongoPort("27017"),
+					     acceptRecoveryMongoDb("distributed_commons"),
+					     acceptRecoveryMongoCollection("accept_recovery")
 {
     addOptions()
         ("store-dir", qpid::optValue(storeDir, "DIR"),
@@ -1417,6 +1494,18 @@ BdbMessageStoreImpl::StoreOptions::StoreOptions(const std::string& name) :
 	("bdbstore-compact",qpid::optValue(compactFlag,"yes|no"),
 		"If yes|true|1, will compact the store and return bdb pages to filesystem. The compaction will be done at the end of the "
 		"queue recovery phase. NOTE: for big databases this operation may take a long time to end.")
+	("enable_accept_recovery",qpid::optValue(enableAcceptRecoveryFlag,"yes|no"),
+		"If yes|true|1, will discard messages accepted while the broker is down. During this operation the mongo database will be "
+		"queryed to get accepted messages.")
+	("accept_recovery_mongo_host",qpid::optValue(acceptRecoveryMongoHost,"host"),
+		"Host name where the plugin can find a MongoDb for accept recovery.")
+	("accept_recovery_mongo_port",qpid::optValue(acceptRecoveryMongoPort,"port"),
+		"Port where the plugin can find a MongoDb for accept recovery.")
+	("accept_recovery_mongo_db",qpid::optValue(acceptRecoveryMongoDb,"name"),
+		"Name of the Mongo Database where the plugin can find information about messages accepted while the broker is down.")
+	("accept_recovery_mongo_collection",qpid::optValue(acceptRecoveryMongoCollection,"name"),
+		"Name of the collection contained in a Mongo Database where the plugin can find information about messages accepted while the "
+		"broker is down")
         ;
 }
 

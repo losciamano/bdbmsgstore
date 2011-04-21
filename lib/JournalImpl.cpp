@@ -281,6 +281,7 @@ void
 JournalImpl::recover_complete()
 {
     discard_transient_message();
+    discard_accepted_message();
     log(LOG_DEBUG, "Recover phase 2 complete; journal now writable.");
     if (_agent != 0)
         _agent->raiseEvent(qmf::com::redhat::rhm::store::EventRecovered(journalName),qpid::management::ManagementAgent::SEV_NOTE);
@@ -344,6 +345,11 @@ void JournalImpl::register_as_transient(std::vector<uint64_t>& trList) {
 	writeActivityFlag=true;
 }
 
+void JournalImpl::register_as_accepted(std::vector<uint64_t>& acList) {
+	this->acceptedList.insert(acceptedList.begin(),acList.begin(),acList.end());
+	writeActivityFlag=true;
+}
+
 void JournalImpl::discard_transient_message() {
 	int transientCount=0;
 	bool errorFlag=false;
@@ -372,6 +378,33 @@ void JournalImpl::discard_transient_message() {
 	log(LOG_INFO,ss2.str());
 }
 
+void JournalImpl::discard_accepted_message() {
+	int acceptedCount=0;
+	bool errorFlag=false;
+	if (transientList.empty()) {
+		return;
+	}
+	std::stringstream ss;
+	ss << "Start deleting "<<transientList.size()<<" transient messages...";
+	log(LOG_INFO,ss.str());
+	for (std::list<uint64_t>::iterator it=acceptedList.begin();it!=acceptedList.end();it++) {
+		uint64_t id(*it);
+		Dbt key(&id,sizeof(id));
+		if (messageDb->del(0,&key,DB_AUTO_COMMIT)!=0) {
+			errorFlag=true;
+		} else {
+			acceptedCount++;
+		}
+	}
+	acceptedList.clear();
+	messageDb->sync(0);
+	std::stringstream ss2;
+	ss2<<acceptedCount<<" accepted message deleted from Db.";
+	if (errorFlag) {
+		ss2<<" Some messages have encountered an error during deleting.";
+	}
+	log(LOG_INFO,ss2.str());
+}
 void JournalImpl::compact_message_database() {
 	DB_COMPACT* cmpt= new DB_COMPACT();
 	if (messageDb->compact(0,0,0,cmpt,DB_FREE_SPACE,0)!=0) {

@@ -88,13 +88,34 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
 	*	Truncate flag option.
 	*       If true, will truncate the store (discard any existing records). If no|false|0, will preserve the existing store files for recovery.
 	**/
-        bool      truncateFlag;
+        bool    truncateFlag;
 	/**
 	*	Compact flag option.
 	*	If true, will compact the Berkeley Db after recovery and transient message deletion; this operation return to filesystem useless db
 	*	pages.
 	**/
-	bool 	  compactFlag;
+	bool 	compactFlag;
+	/**
+	*	Enable Accept Recovery option
+	*	If true, will discard messages accepted while the broker is down.
+	**/
+	bool 	enableAcceptRecoveryFlag;
+	/**
+	*	 Mongo Database Host for Accept Recovery
+	**/
+	std::string 	acceptRecoveryMongoHost;
+	/**
+	*	Mongo Database Port for Accept Recovery
+	**/
+	std::string 	acceptRecoveryMongoPort;
+	/**
+	*	Mongo Database Name for Accept Recovery
+	**/
+	std::string 	acceptRecoveryMongoDb;
+	/**
+	*	Mongo Collection Name for Accept Recovery
+	**/
+	std::string 	acceptRecoveryMongoCollection;
     };
 
   protected:
@@ -255,6 +276,26 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     **/
     bool      compactFlag;
     /**
+    *	Enable Accept Recovery Flag value 
+    **/
+    bool 	enableAcceptRecoveryFlag;
+    /**
+    *	 Mongo Database Host for Accept Recovery
+    **/
+    std::string	acceptRecoveryMongoHost;
+    /**
+    *	Mongo Database Port for Accept Recovery
+    **/
+    std::string	acceptRecoveryMongoPort;
+    /**
+    *	Mongo Database Name for Accept Recovery
+    **/
+    std::string acceptRecoveryMongoDb;
+    /**
+    *	Mongo Collection Name for Accept Recovery
+    **/
+    std::string acceptRecoveryMongoCollection;
+    /**
     *	Highest value of the persistence ID
     **/
     u_int64_t highestRid;
@@ -297,9 +338,7 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     *	List containing pointer to all recovered Journal
     **/
     std::list<JournalImpl*> recoveredJournal;
-
     
-
     /**
     *	Initialization Method used when NO RECOVERY task is needed.
     *	This Method open the BDB environments and all the databases; this method starts also the boost I/O service for asynchronous dequeue
@@ -326,8 +365,10 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
     *	@param	queue		Qpid queue that will contains the message recovered
     *	@param	prepared 	Prepared Transaction List (unused)
     *	@param	messages	Unused parameter containing reference to the sequence for messages id
+    *	@param	acceptedMsg	Reference to the vector where the method can find the messages accepted while broker is down.
+    *	@param	foundMsg	Reference to the vector that will contain the message not recovered due to thiers accepted state.
     *	@param	rcnt		Reference used as output parameter for recovered message counter
-    *	@param	idcnt		Reference used as output parameter for in doubt message counter
+    *	@param	acnt		Reference used as output parameter for accepted message counter
     *	@param	tcnt		Reference used as output parameter for transient message counter
     *	@return	The highest persistence id read from the db
     **/
@@ -335,8 +376,10 @@ class BdbMessageStoreImpl : public qpid::broker::MessageStore, public qpid::mana
                          qpid::broker::RecoverableQueue::shared_ptr& queue,
                          txn_list& prepared,
                          message_index& messages,
+			 std::vector<std::string>& acceptedMsg,
+			 std::vector<std::string>& foundMsg,
                          long& rcnt,
-                         long& idcnt,
+                         long& acnt,
 			 long& tcnt);
     /**
     *	Unimplemented method, always throws mrg::journal::jexception 
