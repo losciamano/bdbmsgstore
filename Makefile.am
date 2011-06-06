@@ -29,7 +29,7 @@ DISTCHECK_CONFIGURE_FLAGS = --with-qpid-checkout=/home/kpvdr/mrg/qpid
 sysconf_DATA = etc/rhmd.conf
 
 #SUBDIRS = lib tests tools docs
-SUBDIRS = lib docs
+SUBDIRS = lib
 
 # Update libtool, if needed.
 libtool: $(LIBTOOL_DEPS)

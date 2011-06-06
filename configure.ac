@@ -29,7 +29,7 @@ AM_INIT_AUTOMAKE([dist-bzip2])
 AC_PREREQ(2.59)
 
 AC_CONFIG_HEADERS([config.h:config.in])
-AC_CONFIG_SRCDIR([lib/BdbMessageStoreImpl.cpp])
+AC_CONFIG_SRCDIR([lib/BdbStoreProvider.cpp])
 
 AC_PROG_CC_STDC
 AM_PROG_CC_C_O
@@ -197,8 +197,8 @@ gl_saved_libs=$LIBS
 #		 [test "$ac_cv_search___db_open" = "none required" ||
 #		  LIB_BERKELEY_DB=$ac_cv_search___db_open],
 #		  AC_MSG_ERROR([Couldn't find required library in range db_cxx-4.2 through db_cxx-4.8]))
-AC_CHECK_LIB([db_cxx-4.6],[__db_open])
-LIB_BERKELEY_DB=-ldb_cxx-4.6
+AC_CHECK_LIB([db_cxx],[__db_open])
+LIB_BERKELEY_DB=-ldb_cxx
 AC_SUBST([LIB_BERKELEY_DB])
 LIBS=$gl_saved_libs
 
