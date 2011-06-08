@@ -652,11 +652,21 @@ int qpid::store::bdb::operator!=(const PendingAsyncOperation& left,const Pending
 }
 int qpid::store::bdb::operator<(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {
-	return ((left.msgId<=right.msgId)&&(left.queueId<right.queueId));
+	int ret=((left.msgId<right.msgId)&&(left.queueId<right.queueId));
+	if (ret) return ret;
+	ret = ((left.msgId==right.msgId)&&(left.queueId<right.queueId));
+	if (ret) return ret;
+	ret= ((left.queueId==right.queueId)&&(left.msgId<right.msgId));
+	return ret;
 }
 int qpid::store::bdb::operator>(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {
-	return ((left.msgId>=right.msgId)&&(left.queueId>right.queueId));
+	int ret=((left.msgId>right.msgId)&&(left.queueId>right.queueId));
+	if (ret) return ret;
+	ret = ((left.msgId==right.msgId)&&(left.queueId>right.queueId));
+	if (ret) return ret;
+	ret= ((left.queueId==right.queueId)&&(left.msgId>right.msgId));
+	return ret;
 }
 int qpid::store::bdb::operator<=(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {

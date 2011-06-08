@@ -50,8 +50,7 @@ bool PidTracker::addPid(uint64_t pid,uint64_t qid)
 			while((static_cast<int>(*pidIt-mainRecord.lastPid)<=1)&&(pidIt!=mainRecord.gapPidSet.end())) 
 			{
 				mainRecord.lastPid=std::max(*pidIt,mainRecord.lastPid);
-				mainRecord.gapPidSet.erase(pidIt);
-				pidIt++;
+				mainRecord.gapPidSet.erase(pidIt++);
 			}
 			updated=true;
 		}

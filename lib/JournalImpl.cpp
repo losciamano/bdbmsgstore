@@ -346,9 +346,15 @@ bool JournalImpl::store_msg(boost::shared_ptr<Db> db,
                 txn.abort();
                 throw;
         }
-        if (status!=0) 
+        if (status!=0)
         {
-                log(LOG_ERROR,"store_msg("+boost::lexical_cast<std::string>(pid)+") => Db->put Error Code : "+boost::lexical_cast<std::string>(status));
+		if (status!=DB_KEYEXIST)
+		{
+	                log(LOG_ERROR,"store_msg("+boost::lexical_cast<std::string>(pid)+") => Db->put Error Code : "+boost::lexical_cast<std::string>(status));
+		} else
+		{
+	                log(LOG_INFO,"store_msg("+boost::lexical_cast<std::string>(pid)+") => Message is already in the journal");
+		}
         }
         if (status == DB_KEYEXIST) 
         {

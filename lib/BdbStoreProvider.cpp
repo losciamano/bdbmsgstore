@@ -566,7 +566,8 @@ class BdbStoreProvider : public qpid::store::StorageProvider, public qpid::manag
 					std::set<PendingAsyncEnqueue>* aeset,
                                       	long& rcnt,
 				      	long& acnt,
-				      	long& tcnt);
+				      	long& tcnt,
+					uint64_t& lastPid);
 		void deleteUnusedLog();
 		void initManagement();
 };
@@ -1464,7 +1465,9 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 	std::set<PendingAsyncEnqueue> aeset;
 	aologger->recoverAsyncDequeue(adset);
 	aologger->recoverAsyncEnqueue(aeset);
+	QPID_LOG(notice,"Readed "<<adset.size()<<" pending async dequeue and "<<aeset.size()<<" pending async enqueue from log");
     	std::vector< std::string > toBeDeleteFromMongo;
+	uint64_t localLastPid=0ULL;
 	for (std::list<qpid::broker::RecoverableQueue::shared_ptr>::iterator it=recoveredJournal.begin();it !=recoveredJournal.end();it++) 
 	{
 		const std::string queueName =(*it)->getName().c_str();
@@ -1474,11 +1477,16 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
            		long acnt = 0L;    // accepted msg count
 	    		long tcnt = 0L;	//transient msg count 
             		u_int64_t thisHighestRid = 0ULL;
-			thisHighestRid=decodeAndRecoverMsg(recoverer, *it, messageMap,messageQueueMap,toBeDeleteFromMongo,&adset,&aeset, rcnt, acnt,tcnt);
+			uint64_t thisLastPid = 0ULL;
+			thisHighestRid=decodeAndRecoverMsg(recoverer, *it, messageMap,messageQueueMap,toBeDeleteFromMongo,&adset,&aeset, rcnt, acnt,tcnt,thisLastPid);
 	    		if (highestRid == 0ULL)
 			        highestRid = thisHighestRid;
 		        else if (thisHighestRid - highestRid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
-		                highestRid = thisHighestRid;
+		                highestRid = thisLastPid;
+	    		if (localLastPid == 0ULL)
+			        localLastPid = thisLastPid;
+		        else if (thisLastPid - localLastPid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
+		                localLastPid = thisLastPid;
 	            	QPID_LOG(notice, "Recovered queue \"" << queueName << "\": " << rcnt << " messages recovered; " << acnt << " accepted while down; "<<tcnt <<" mark as transient.");
         	} catch (const mrg::journal::jexception& e) 
 		{
@@ -1514,9 +1522,9 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
     	// NOTE: highestRid is set by both recoverQueues() and recoverTplStore() as
 	// the messageIdSequence is used for both queue journals and the tpl journal.
 	messageIdSequence.reset(highestRid + 1);
-	this->lastPid=highestRid;
-	tracker.reset(highestRid);
+	tracker.reset(localLastPid);
 	QPID_LOG(info, "Most recent persistence id found: 0x" << std::hex << highestRid << std::dec);
+	QPID_LOG(info, "Last Enqueued persistence id found: 0x" << std::hex << localLastPid << std::dec);
 	QPID_LOG(notice,"Resurrecting Async operation Pool..");
 	int resEnqCount=0;
 	std::set<PendingAsyncDequeue>::iterator adit;
@@ -1802,7 +1810,8 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 					std::set<PendingAsyncEnqueue>* aeset,
                                       	long& rcnt,
 				      	long& acnt,
-				      	long& tcnt)
+				      	long& tcnt,
+					uint64_t& lastPid)					
 {
 	uint64_t maxRid=0ULL;
 	try 
@@ -1817,6 +1826,7 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 		std::vector<PendingOperationId> transient_async; //Delete only from enq
 		std::vector<PendingOperationId> useless_async; //Delete from both enq and deq
 		std::vector<PendingOperationId> dequeue_completed_async; //Delete only from deq
+		std::set<uint64_t> penq_recovered;
 		//Iterate over pending enqueue to add messages to the recovered list
 		for(std::set<PendingAsyncEnqueue>::iterator mit = aeset->begin();mit!=aeset->end();)
 		{
@@ -1835,6 +1845,7 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 			} else	//Not Transient and not Dequeue Start => recover
 			{	
 				recovered.push_back(std::pair<uint64_t,std::string>(pae.msgId,std::string(&pae.buff[0],pae.size)));
+				penq_recovered.insert(pae.msgId);
 				++mit;
 			}
 		}
@@ -1899,6 +1910,14 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 					adset->erase(adit);
 					dequeue_completed_async.push_back(opid);
 					toRecover=false;
+				}
+				set<uint64_t>::iterator mxIt = penq_recovered.find(it->first);
+				if (mxIt!=penq_recovered.end())
+				{
+					penq_recovered.erase(mxIt++);
+				} else 
+				{
+					lastPid=max(it->first,lastPid);
 				}
 				maxRid=max(it->first,maxRid);
 				if (toRecover) 
