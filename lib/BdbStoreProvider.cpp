@@ -43,6 +43,58 @@ namespace bdb{
 
 qpid::sys::Mutex TxnCtxt::globalSerialiser;
 
+struct QueueRecoverReport {
+	/**
+	*	Recovered Message Count
+	**/
+	long rcnt;
+	/**
+	*	Accepted message count
+	**/
+	long acnt;
+	/**
+	*	Async Accepted Message count
+	**/
+	long aacnt;
+	/**
+	*	Transient Message count
+	**/
+	long tcnt;
+	/**
+	*	Database-recovered message count
+	**/
+	long dbcnt;
+	/**
+	*	Async-Log-recovered message count
+	**/
+	long logcnt;
+	/**
+	*	Wrong async enqueue log lines count
+	**/
+	long wacnt;
+	QueueRecoverReport()
+	{
+		rcnt=0L;
+		acnt=0L;
+		aacnt=0L;
+		tcnt=0L;
+		dbcnt=0L;
+		logcnt=0L;
+		wacnt=0L;
+	}
+	QueueRecoverReport(const QueueRecoverReport& ref)
+	{
+		rcnt=ref.rcnt;
+		acnt=ref.acnt;
+		aacnt=ref.aacnt;
+		tcnt=ref.tcnt;
+		dbcnt=ref.dbcnt;
+		logcnt=ref.logcnt;
+		wacnt=ref.wacnt;
+	}
+};
+
+
 class BdbStoreProvider : public qpid::store::StorageProvider, public qpid::management::Manageable
 {
 	protected:
@@ -343,233 +395,223 @@ class BdbStoreProvider : public qpid::store::StorageProvider, public qpid::manag
 		**/
 		int num_jfiles;
 		int num_thread_enqueue;
-		int num_thread_dequeue;
-		/**
-		 *	Data structure containings association between queue name e JournalImpl object
-		 **/
-		JournalListMap journalList;
-		/**
-		 *	Lock over Journal List access
-   		 **/	
-		qpid::sys::Mutex journalListLock;
-		/**
-		*	Last inserted Persistence id
-		**/
-		uint64_t lastPid;
-		/**
-		*	Set containing gap separated id
-		**/
-		std::set<uint64_t> gapPidSet;
-		/**
-		*	Lock over Last Pid access
-		**/
-		qpid::sys::Mutex lastPidLock;
-		/**
-		*	Condition Variable for not enqueued
-		**/
-		qpid::sys::Condition notYetEnqueued;
-		/**
-		*	Management Agent used to communicate with QMF
-		**/
-		qpid::management::ManagementAgent* agent;
-    		qmf::com::atono::server::qpid::bdbstore::StorageProvider* mgmtObject;
+	int num_thread_dequeue;
+	/**
+	 *	Data structure containings association between queue name e JournalImpl object
+	 **/
+	JournalListMap journalList;
+	/**
+	 *	Lock over Journal List access
+	 **/	
+	qpid::sys::Mutex journalListLock;
+	/**
+	*	Last inserted Persistence id
+	**/
+	uint64_t lastPid;
+	/**
+	*	Set containing gap separated id
+	**/
+	std::set<uint64_t> gapPidSet;
+	/**
+	*	Management Agent used to communicate with QMF
+	**/
+	qpid::management::ManagementAgent* agent;
+	qmf::com::atono::server::qpid::bdbstore::StorageProvider* mgmtObject;
 
-		boost::threadpool::pool enqueuePool;
-		boost::threadpool::pool dequeuePool;
-		AsyncOperationLogger* aologger;	
-		PidTracker tracker;
-		boost::shared_ptr<boost::thread> enqLogCleanerThread;
-		boost::shared_ptr<boost::thread> deqLogCleanerThread;
-		qpid::broker::Broker* broker;
+	boost::threadpool::pool enqueuePool;
+	boost::threadpool::pool dequeuePool;
+	AsyncOperationLogger* aologger;	
+	PidTracker tracker;
+	boost::shared_ptr<boost::thread> enqLogCleanerThread;
+	boost::shared_ptr<boost::thread> deqLogCleanerThread;
+	qpid::broker::Broker* broker;
 
-		/**
-		*	Default store directory
-		**/
-		static const std::string storeTopLevelDir;
+	/**
+	*	Default store directory
+	**/
+	static const std::string storeTopLevelDir;
 
-		/**
-		*	Initialization method that check the options and then call the init(const std::string&,bool) method with the right parameter.
-		*	@param	options	Pointer to an Options Struct
-		*	@return	True if the initialization has been done, false otherwise.
-		**/
-		bool init(const qpid::Options* options);
-		/**
-		*	Initialization method that handles the truncate option and decides to call truncateInit(bool) or init() method.
-		*	@param	dir		Store Base directory
-		*	@param	truncateFlag 	Truncate Flag to handle
-		*	@return True if the store has been initialized, false otherwise.
-		**/
-		bool init(const std::string& dir,const bool truncateFlag=false);
-		/**
-		 *	This method is used to check if the store is initialized. If it's not initialized, the init() method will be call.
-		 **/
-		inline void checkInit() 
-		{
-        		if (!isInit) 
-			{ 
-				init("/tmp"); 
-				isInit = true;
-			}
+	/**
+	*	Initialization method that check the options and then call the init(const std::string&,bool) method with the right parameter.
+	*	@param	options	Pointer to an Options Struct
+	*	@return	True if the initialization has been done, false otherwise.
+	**/
+	bool init(const qpid::Options* options);
+	/**
+	*	Initialization method that handles the truncate option and decides to call truncateInit(bool) or init() method.
+	*	@param	dir		Store Base directory
+	*	@param	truncateFlag 	Truncate Flag to handle
+	*	@return True if the store has been initialized, false otherwise.
+	**/
+	bool init(const std::string& dir,const bool truncateFlag=false);
+	/**
+	 *	This method is used to check if the store is initialized. If it's not initialized, the init() method will be call.
+	 **/
+	inline void checkInit() 
+	{
+		if (!isInit) 
+		{ 
+			init("/tmp"); 
+			isInit = true;
 		}
-		/**
-		*	The method registers when a Journal is deleted and removes it from the internal data structures.
-		*	@param	j	Reference to the Journal that has been deleted.
-		**/
-		void journalDeleted(JournalImpl& j);
+	}
+	/**
+	*	The method registers when a Journal is deleted and removes it from the internal data structures.
+	*	@param	j	Reference to the Journal that has been deleted.
+	**/
+	void journalDeleted(JournalImpl& j);
 
-		/**
-		*	The method calculates the hash of a string using the Daniel Bernstein hash function.
-		*	@param	str	String to hash
-		*	@return The hash of the string.
-		**/
-		u_int32_t bHash(const std::string str);
-		/**
-		*	The method returns the Journal Directory for a given queue. This name is calculated from the queue name.
-		*	@param	queue	Reference to the queue associated with the Journal
-		*	@return	The Directory Name of the Journal.
-		**/
-		std::string getJrnlDir(const qpid::broker::PersistableQueue& queue); //for exmaple /var/rhm/ + queueDir/
-		/**
-		*	The method returns the hashed name for a directory associated with a given queue name
-		*	@param	queueName	String containing queueName
-		*	@return	String containing the hash name for the directory.
-		**/
-		std::string getJrnlHashDir(const std::string& queueName);
-		/**
-		*	The method returns the base directory for all the Journal.
-		*	@return	The Journal base directory.
-		**/
-		std::string getJrnlBaseDir();
-		/**
-		*	The method returns the base directory for all berkeley databases.
-		*	@return	The base directory for the bdb
-		**/
-		std::string getBdbBaseDir();
-		/**
-		*	The method returns the base directory for async log environment.
-		*	@return	The base directory for async log environment
-		**/
-		std::string getAsyncEnvDir();
+	/**
+	*	The method calculates the hash of a string using the Daniel Bernstein hash function.
+	*	@param	str	String to hash
+	*	@return The hash of the string.
+	**/
+	u_int32_t bHash(const std::string str);
+	/**
+	*	The method returns the Journal Directory for a given queue. This name is calculated from the queue name.
+	*	@param	queue	Reference to the queue associated with the Journal
+	*	@return	The Directory Name of the Journal.
+	**/
+	std::string getJrnlDir(const qpid::broker::PersistableQueue& queue); //for exmaple /var/rhm/ + queueDir/
+	/**
+	*	The method returns the hashed name for a directory associated with a given queue name
+	*	@param	queueName	String containing queueName
+	*	@return	String containing the hash name for the directory.
+	**/
+	std::string getJrnlHashDir(const std::string& queueName);
+	/**
+	*	The method returns the base directory for all the Journal.
+	*	@return	The Journal base directory.
+	**/
+	std::string getJrnlBaseDir();
+	/**
+	*	The method returns the base directory for all berkeley databases.
+	*	@return	The base directory for the bdb
+	**/
+	std::string getBdbBaseDir();
+	/**
+	*	The method returns the base directory for async log environment.
+	*	@return	The base directory for async log environment
+	**/
+	std::string getAsyncEnvDir();
 
-		/**
-		*	Method to obtain the Store Directory 
-		*	@return	String contains the Store Directory
-		**/
-		std::string getStoreDir() const;	
-		/**
-		*	Method used to delete from database all bindings associated with the given queue.
-		*	@param	queue	Reference to the queue
-		**/
-		void deleteBindingsForQueue(const qpid::broker::PersistableQueue& queue);    	
-		/**
-		*	Method used to delete from database a binding identified by a key, associated with a queue and an exchange
-		*	@param	exchange	Reference to the exchange
-		*	@param	queue		Reference to the queue
-		*	@param	key		Reference to the key of the binding to delete
-		**/
-		void deleteBinding(const qpid::broker::PersistableExchange& exchange,
-				   const qpid::broker::PersistableQueue& queue,
-				   const std::string& key);
+	/**
+	*	Method to obtain the Store Directory 
+	*	@return	String contains the Store Directory
+	**/
+	std::string getStoreDir() const;	
+	/**
+	*	Method used to delete from database all bindings associated with the given queue.
+	*	@param	queue	Reference to the queue
+	**/
+	void deleteBindingsForQueue(const qpid::broker::PersistableQueue& queue);    	
+	/**
+	*	Method used to delete from database a binding identified by a key, associated with a queue and an exchange
+	*	@param	exchange	Reference to the exchange
+	*	@param	queue		Reference to the queue
+	*	@param	key		Reference to the key of the binding to delete
+	**/
+	void deleteBinding(const qpid::broker::PersistableExchange& exchange,
+			   const qpid::broker::PersistableQueue& queue,
+			   const std::string& key);
 
-	    	/**
-	    	*	Method used to open a database.
-	    	*	@param	db	Pointer to the database handle
-	    	*	@param	txn	Transaction context for the operation. If null/0 the operation will be executed outside transaction
-	    	*	@param	file	Char array containing the path to the file containing the database to open
-	    	*	@param	dupKey	If this flag is set to True the database will accept duplicate key, otherwise (if set to False) the database will
-	    	*			return an error if trying to insert an element with a key already contained in the database.
-	    	**/
-	    	void open(DbPtr db, DbTxn* txn, const char* file, bool dupKey);
-	    	/**
-	    	*	Method for closing all the databases used by the store.
-	    	**/	
-	    	void closeDbs();
-    		/**
-		 *	Method used to insert a generic persistable object in a given database and assign the next id in the sequence as 
-		 *	the persistence Id of the object.
-		 *	@param	db	Pointer to the database
-		 *	@param	seq	Reference to the Sequence used to obtain the new Persistence Id
-		 *	@param	p	Reference to the persistable object that will be inserted
-	 	 *	@return	True if the object has been inserted correctly, False if the persistence id is already in the database.
-		**/
-		bool create(DbPtr db, IdSequence& seq,const qpid::broker::Persistable& p);
-		/**
-		*	Method used to insert an entry in the database. Transactional put is supported.
-		*	@param	db	Pointer to the database handle
-		*	@param	txn	Transaction context for the operation. If null/0 the operation will be executed outside a transaction
-		*	@param	key	Reference to the key of the database entry
-		*	@param	value	Reference to the value of the database entry
-		**/
-		void put(DbPtr db,
-			 DbTxn* txn,
-			 Dbt& key,
-			 Dbt& value);
-		/**
-    		*	Method used to delete a generic persistable object identified by a Persistence Id from the given database.
-		*	@param	db	Pointer to the database
-		*	@param	p	Reference to the persistable object that will be deleted
-		*/
-		void destroy(DbPtr db, const qpid::broker::Persistable& p);
-    		/**
-		*	Method used to encode a qpid message in a char buffer.
-		*	The structure of the buffer is the following:
-		*	1 u_int8_t that contains a flag for transient message (0 if persistent, 1 if transient)
-		*	1 u_int64_t that contains the header size obtained through the encodedHeaderSize() of the qpid Message Object
-		*	1 section containig the result of encode() method of the qpid Message object
-		*	@param 	buff	Reference to the buffer that will be filled with encoded data (this buffer will be initialized inside this method)
-		*	@param 	message	Reference to the QPID message to encode.
-		*	@return	The u_int64_t containing the size of the buffer
-		**/
-		u_int64_t msgEncode(std::vector<char>& buff, const boost::intrusive_ptr<qpid::broker::PersistableMessage>& message);
-	       
-		/**
-		*	Method used to store a message in the external store (a JournalImpl Object) associated with the given queue.
-		*	@param	jc		Pointer to the Journal Object where the message has to be stored
-		*	@param	buff		Buffer containing the encoded message
-		*	@param	size		Encoded size of the message
-		*	@param	pid		Persistence Id of the message
-		*	@param	transient	Flag that indicates if message is transient or persistent
-		**/
-		void store(JournalImpl* jc,
-                           std::vector<char>& buff,
-			   const uint64_t size,
-                           uint64_t pid,
-                           bool transient);
-		/**
-		*	Method used to register a dequeue asynchronous.
-		*	@param	msgId	Persistence identifier of the Message to dequeue
-		*	@param	jc	Pointer to the queue that contains the message
-		*/
-		void async_dequeue(uint64_t msgId,
-				   JournalImpl* jc);
-		/**
-		 *	Method for recovering message informations from the Journal
-		 *	This method uses the recoverMessages method of the JournalImpl to get messages from the Berkeley Db.
-		 *	@param	recovery	Reference to the Recovery Manager used to recover QPID Objects
-		 *	@param	queue		Qpid queue that will contains the message recovered
-		 *	@param	messageMap	Map containing reference between id and messages
-		 *	@param	messageQueueMap	Map containing reference between msgid and queue id
-		 *	@param	foundMsg	Reference to the vector that will contain the message not recovered due to thiers accepted state.
-		 *	@param	adset		Reference to the async dequeue set
-		 *	@param	aeset		Reference to the async enqueue set
-		 *	@param	rcnt		Reference used as output parameter for recovered message counter
-		 *	@param	acnt		Reference used as output parameter for accepted message counter
-		 *	@param	tcnt		Reference used as output parameter for transient message counter
-		 *	@return	The highest persistence id read from the db
-		 **/
-		uint64_t decodeAndRecoverMsg(qpid::broker::RecoveryManager& recovery,
-					qpid::broker::RecoverableQueue::shared_ptr queue,
-					MessageMap& messageMap,
-					MessageQueueMap& messageQueueMap,
-					std::vector<std::string>& foundMsg,
-					std::set<PendingAsyncDequeue>* adset,
-					std::set<PendingAsyncEnqueue>* aeset,
-                                      	long& rcnt,
-				      	long& acnt,
-				      	long& tcnt,
-					uint64_t& lastPid);
-		void deleteUnusedLog();
-		void initManagement();
+	/**
+	*	Method used to open a database.
+	*	@param	db	Pointer to the database handle
+	*	@param	txn	Transaction context for the operation. If null/0 the operation will be executed outside transaction
+	*	@param	file	Char array containing the path to the file containing the database to open
+	*	@param	dupKey	If this flag is set to True the database will accept duplicate key, otherwise (if set to False) the database will
+	*			return an error if trying to insert an element with a key already contained in the database.
+	**/
+	void open(DbPtr db, DbTxn* txn, const char* file, bool dupKey);
+	/**
+	*	Method for closing all the databases used by the store.
+	**/	
+	void closeDbs();
+	/**
+	 *	Method used to insert a generic persistable object in a given database and assign the next id in the sequence as 
+	 *	the persistence Id of the object.
+	 *	@param	db	Pointer to the database
+	 *	@param	seq	Reference to the Sequence used to obtain the new Persistence Id
+	 *	@param	p	Reference to the persistable object that will be inserted
+	 *	@return	True if the object has been inserted correctly, False if the persistence id is already in the database.
+	**/
+	bool create(DbPtr db, IdSequence& seq,const qpid::broker::Persistable& p);
+	/**
+	*	Method used to insert an entry in the database. Transactional put is supported.
+	*	@param	db	Pointer to the database handle
+	*	@param	txn	Transaction context for the operation. If null/0 the operation will be executed outside a transaction
+	*	@param	key	Reference to the key of the database entry
+	*	@param	value	Reference to the value of the database entry
+	**/
+	void put(DbPtr db,
+		 DbTxn* txn,
+		 Dbt& key,
+		 Dbt& value);
+	/**
+	*	Method used to delete a generic persistable object identified by a Persistence Id from the given database.
+	*	@param	db	Pointer to the database
+	*	@param	p	Reference to the persistable object that will be deleted
+	*/
+	void destroy(DbPtr db, const qpid::broker::Persistable& p);
+	/**
+	*	Method used to encode a qpid message in a char buffer.
+	*	The structure of the buffer is the following:
+	*	1 u_int8_t that contains a flag for transient message (0 if persistent, 1 if transient)
+	*	1 u_int64_t that contains the header size obtained through the encodedHeaderSize() of the qpid Message Object
+	*	1 section containig the result of encode() method of the qpid Message object
+	*	@param 	buff	Reference to the buffer that will be filled with encoded data (this buffer will be initialized inside this method)
+	*	@param 	message	Reference to the QPID message to encode.
+	*	@return	The u_int64_t containing the size of the buffer
+	**/
+	u_int64_t msgEncode(std::vector<char>& buff, const boost::intrusive_ptr<qpid::broker::PersistableMessage>& message);
+       
+	/**
+	*	Method used to store a message in the external store (a JournalImpl Object) associated with the given queue.
+	*	@param	jc		Pointer to the Journal Object where the message has to be stored
+	*	@param	buff		Buffer containing the encoded message
+	*	@param	size		Encoded size of the message
+	*	@param	pid		Persistence Id of the message
+	*	@param	transient	Flag that indicates if message is transient or persistent
+	**/
+	void store(JournalImpl* jc,
+		   std::vector<char>& buff,
+		   const uint64_t size,
+		   uint64_t pid,
+		   bool transient);
+	/**
+	*	Method used to register a dequeue asynchronous.
+	*	@param	msgId	Persistence identifier of the Message to dequeue
+	*	@param	jc	Pointer to the queue that contains the message
+	*/
+	void async_dequeue(uint64_t msgId,
+			   JournalImpl* jc);
+	/**
+	 *	Method for recovering message informations from the Journal
+	 *	This method uses the recoverMessages method of the JournalImpl to get messages from the Berkeley Db.
+	 *	@param	recovery	Reference to the Recovery Manager used to recover QPID Objects
+	 *	@param	queue		Qpid queue that will contains the message recovered
+	 *	@param	messageMap	Map containing reference between id and messages
+	 *	@param	messageQueueMap	Map containing reference between msgid and queue id
+	 *	@param	foundMsg	Reference to the vector that will contain the message not recovered due to thiers accepted state.
+	 *	@param	adset		Reference to the async dequeue set
+	 *	@param	aeset		Reference to the async enqueue set
+	 *	@param	rcnt		Reference used as output parameter for recovered message counter
+	 *	@param	acnt		Reference used as output parameter for accepted message counter
+	 *	@param	tcnt		Reference used as output parameter for transient message counter
+	 *	@return	The highest persistence id read from the db
+	 **/
+	uint64_t decodeAndRecoverMsg(qpid::broker::RecoveryManager& recovery,
+				qpid::broker::RecoverableQueue::shared_ptr queue,
+				MessageMap& messageMap,
+				MessageQueueMap& messageQueueMap,
+				std::vector<std::string>& foundMsg,
+				PendingDequeueSet* adset,
+				PendingEnqueueSet* aeset,
+				QueueRecoverReport& report,
+				uint64_t& lastPid);
+	void deleteUnusedLog();
+	void initManagement();
 };
 
 /**
@@ -580,12 +622,12 @@ static BdbStoreProvider instance; // Static initialization.
 const std::string BdbStoreProvider::storeTopLevelDir("bdbstore");
 
 BdbStoreProvider::BdbStoreProvider() : 	highestRid(0),
-                                 	isInit(false),
-                                 	num_jfiles(4),
-					num_thread_enqueue(2),
-					num_thread_dequeue(2),
-					lastPid(0),
-					agent(0)
+				isInit(false),
+				num_jfiles(4),
+				num_thread_enqueue(2),
+				num_thread_dequeue(2),
+				lastPid(0),
+				agent(0)
 {
 }
 
@@ -594,19 +636,19 @@ BdbStoreProvider::~BdbStoreProvider()
 	finalizeMe();
 	try 
 	{
-        	closeDbs();
+		closeDbs();
 	} catch (const DbException& e) 
 	{
-	        QPID_LOG(error, "Error closing BDB databases: " <<  e.what());
+		QPID_LOG(error, "Error closing BDB databases: " <<  e.what());
 	} catch (const mrg::journal::jexception& e) 
-	{
+	{	
 		QPID_LOG(error, "Error: " << e.what());
 	} catch (const std::exception& e) 
 	{
-       		QPID_LOG(error, "Error: " << e.what());
+		QPID_LOG(error, "Error: " << e.what());
 	} catch (...) 
 	{
-	        QPID_LOG(error, "Unknown error in BdbMessageStoreImpl::~BdbMessageStoreImpl()");
+		QPID_LOG(error, "Unknown error in BdbMessageStoreImpl::~BdbMessageStoreImpl()");
 	}
 }
 
@@ -616,26 +658,26 @@ BdbStoreProvider::earlyInitialize(Plugin::Target &target)
 	MessageStorePlugin *store = dynamic_cast<MessageStorePlugin *>(&target);
 	if (store) 
 	{
-        	// If the database init fails, report it and don't register; give
-        	// the rest of the broker a chance to run.
-        	//
-        	// Don't try to initConnection() since that will fail if the
-        	// database doesn't exist. Instead, try to open a connection without
-        	// a database name, then search for the database. There's still a
-        	// chance this provider won't be selected for the store too, so be
-        	// be sure to close the database connection before return to avoid
-        	// leaving a connection up that will not be used.
-        	try 
+		// If the database init fails, report it and don't register; give
+		// the rest of the broker a chance to run.
+		//
+		// Don't try to initConnection() since that will fail if the
+		// database doesn't exist. Instead, try to open a connection without
+		// a database name, then search for the database. There's still a
+		// chance this provider won't be selected for the store too, so be
+		// be sure to close the database connection before return to avoid
+		// leaving a connection up that will not be used.
+		try 
 		{
 			this->broker = store->getBroker();
 			DataDir& dataDir = broker->getDataDir ();
-		        if (options.storeDir.empty ())
-        		{
-		        	if (!dataDir.isEnabled ())
-                			throw StoreException ("bdbmsgstore: If --data-dir is blank or --no-data-dir is specified, "
+			if (options.storeDir.empty ())
+			{
+				if (!dataDir.isEnabled ())
+					throw StoreException ("bdbmsgstore: If --data-dir is blank or --no-data-dir is specified, "
 							"--store-dir must be present.");
-			        options.storeDir = dataDir.getPath ();
-		        }
+				options.storeDir = dataDir.getPath ();
+			}
 			if (init(getOptions()))
 			{
 				store->providerAvailable("BDB", this);
@@ -643,20 +685,20 @@ BdbStoreProvider::earlyInitialize(Plugin::Target &target)
 			{ 
 				return;
 			}
-				
-        	} catch (qpid::Exception &e) 
+			
+		} catch (qpid::Exception &e) 
 		{
-            		QPID_LOG(error, e.what());
-            		return;
-        	}
-        	store->addFinalizer(boost::bind(&BdbStoreProvider::finalizeMe, this));
-    	}
+			QPID_LOG(error, e.what());
+			return;
+		}
+		store->addFinalizer(boost::bind(&BdbStoreProvider::finalizeMe, this));
+	}	
 }
 
 bool BdbStoreProvider::init(const qpid::Options* /*opts*/)
 {
-    // Pass option values to init(...)
-    return init(options.storeDir);
+	// Pass option values to init(...)
+	return init(options.storeDir);
 }
 
 bool BdbStoreProvider::init(const std::string& dir,const bool truncateFlag)
@@ -672,20 +714,19 @@ bool BdbStoreProvider::init(const std::string& dir,const bool truncateFlag)
 	initManagement();
 	if (truncateFlag) 
 	{
-        	truncateInit(false);
+		truncateInit(false);
 	} else
 	{
 		const int retryMax = 3;
 		int bdbRetryCnt = 0;
-    		do 
+		do 
 		{
-        		if (bdbRetryCnt++ > 0)
-        		{
-            			closeDbs();
-            			::usleep(1000000); // 1 sec delay
-            			QPID_LOG(error, "Previoius BDB store initialization failed, retrying (" << bdbRetryCnt << " of " << retryMax << ")...");
-        		}
-
+			if (bdbRetryCnt++ > 0)
+			{
+				closeDbs();
+				::usleep(1000000); // 1 sec delay
+				QPID_LOG(error, "Previoius BDB store initialization failed, retrying (" << bdbRetryCnt << " of " << retryMax << ")...");
+			}
 			try 
 			{
 				std::string asyncDir=getAsyncEnvDir();
@@ -713,7 +754,7 @@ bool BdbStoreProvider::init(const std::string& dir,const bool truncateFlag)
 				dbs.push_back(bindingDb);
 				generalDb.reset(new Db(dbenv.get(), 0));
 				dbs.push_back(generalDb);
-
+	
 				TxnCtxt txn;
 				txn.begin(dbenv.get(), false);
 				try 
@@ -726,13 +767,8 @@ bool BdbStoreProvider::init(const std::string& dir,const bool truncateFlag)
 					open(generalDb, txn.get(), "general.db",  false);
 					txn.commit();
 				} catch (...) { txn.abort(); throw; }
-
 				this->enqueuePool=boost::threadpool::pool(num_thread_enqueue);
 				this->dequeuePool=boost::threadpool::pool(num_thread_dequeue);
-				this->eraserThread=boost::shared_ptr<boost::thread>(new boost::thread
-				(
-					boost::bind(&BdbStoreProvider::deleteUnusedLog,this)
-				));
 				isInit = true;
 			} catch (const DbException& e) 
 			{
@@ -764,7 +800,7 @@ bool BdbStoreProvider::init(const std::string& dir,const bool truncateFlag)
 	}
 	return isInit;
 }
-void BdbStoreProvider::initialize(Plugin::Target& /*target*/) 
+	void BdbStoreProvider::initialize(Plugin::Target& /*target*/) 
 {
 }
 void BdbStoreProvider::activate(MessageStorePlugin& /*store*/) 
@@ -794,29 +830,50 @@ void BdbStoreProvider::truncateInit(const bool /*pushDownStoreFiles*/)
 }
 void BdbStoreProvider::finalizeMe()
 {
-    enqueuePool.clear();
-    dequeuePool.clear();
-    enqueuePool.wait(0);
-    dequeuePool.wait(0);
-    {
-        qpid::sys::Mutex::ScopedLock sl(journalListLock);
-        for (JournalListMapItr i = journalList.begin(); i != journalList.end(); i++)
-        {
-            JournalImpl* jQueue = i->second;
-	    if (jQueue!=0x0) 
-	    {
-	            jQueue->resetDeleteCallback();
-	            if (jQueue->is_ready()) jQueue->stop(true);
-	    }
-	    journalList.erase(i);
-        }
-    }
-    if (aologger)
-    {
-	    delete aologger;
-	    aologger=0x0;
-    }
+	enqueuePool.clear();
+	dequeuePool.clear();
+	enqueuePool.wait(0);
+	dequeuePool.wait(0);
+	if (enqLogCleanerThread.get())
+	{
+		enqLogCleanerThread->interrupt();
+		enqLogCleanerThread->join();
+		enqLogCleanerThread.reset();
+	}
+	if (deqLogCleanerThread.get())
+	{
+		deqLogCleanerThread->interrupt();
+		deqLogCleanerThread->join();
+		deqLogCleanerThread.reset();
+	}
+	if (eraserThread.get())
+	{
+		eraserThread->interrupt();
+		eraserThread->join();
+		eraserThread.reset();
+	}
+	{
+		qpid::sys::Mutex::ScopedLock sl(journalListLock);
+		for (JournalListMapItr i = journalList.begin(); i != journalList.end(); )
+		{
+			JournalImpl* jQueue = i->second;
+			if (jQueue!=0x0) 
+			{
+				jQueue->resetDeleteCallback();
+				if (jQueue->is_ready()) jQueue->stop(true);
+			}
+			journalList.erase(i++);
+		}
+	}
+	if (aologger)
+	{
+		delete aologger;
+		aologger=0x0;
+	}
+	acceptedFromMongo.clear();
+	recoveredJournal.clear();
 }
+
 void BdbStoreProvider::initManagement ()
 {
     if (broker != 0) {
@@ -904,7 +961,10 @@ void BdbStoreProvider::open(DbPtr db, DbTxn* txn, const char* file,bool dupKey)
 void BdbStoreProvider::closeDbs()
 {
     	for (std::list<DbPtr >::iterator i = dbs.begin(); i != dbs.end(); i++) {
-        	(*i)->close(0);
+		if (i->get())
+		{
+	        	(*i)->close(0);
+		}
     	}
     	dbs.clear();
 }
@@ -913,7 +973,7 @@ void BdbStoreProvider::deleteUnusedLog() {
 	char** list;	
 	char** begin;
 	while (true) 
-	{
+	{			
 		if ((ret = dbenv->txn_checkpoint(0,0,0))!=0) {
 			dbenv->err(ret,"txn checkpoint");
 			THROW_STORE_EXCEPTION("Error generating a checkpoint");
@@ -1020,9 +1080,8 @@ void BdbStoreProvider::create(PersistableQueue& queue,const qpid::framing::Field
 	std::stringstream ss;
     	ss << getBdbBaseDir() << getJrnlDir(queue);
     	mrg::journal::jdir::create_dir(ss.str());
-    	jQueue = new JournalImpl(/*timer,*/ queue.getName(),queue.getPersistenceId(),getJrnlDir(queue),getBdbBaseDir(),this->num_jfiles,
-                             /*defJournalGetEventsTimeout, defJournalFlushTimeout,*/ agent,dbenv,
-                             boost::bind(&BdbStoreProvider::journalDeleted, this, _1));
+    	jQueue = new JournalImpl(queue.getName(),queue.getPersistenceId(),getJrnlDir(queue),getBdbBaseDir(),this->num_jfiles,true,
+                             agent,dbenv, boost::bind(&BdbStoreProvider::journalDeleted, this, _1));
     	queue.setExternalQueueStore(dynamic_cast<qpid::broker::ExternalQueueStore*>(jQueue));
     	try {
         	// init will create the deque's for the init...
@@ -1170,6 +1229,7 @@ void BdbStoreProvider::loadContent(const qpid::broker::PersistableQueue& queue,
 	if (messageId != 0) 
 	{
     		//QPID_LOG(warning,"Start loading content "+boost::lexical_cast<std::string>(messageId)+" from "+queue.getName());
+		QPID_LOG(debug,"Wait for "<<messageId << " on "<<queueId);
 		tracker.waitForPid(messageId,queueId);
 	        try 
 		{
@@ -1242,6 +1302,9 @@ void BdbStoreProvider::enqueue(qpid::broker::TransactionContext* ctxt,
 	}
 	msg->enqueueComplete();
 	boost::posix_time::time_duration diff = boost::posix_time::time_period(start,boost::posix_time::microsec_clock::local_time()).length();
+	if (diff.total_milliseconds()>100) {
+		cout<<"[E] Too late !"<<diff.total_milliseconds()<<endl;
+	}
 	QPID_LOG(debug,"enqueue "+boost::lexical_cast<std::string>(messageId)+" from "+queue.getName()+" ; Duration : "+boost::lexical_cast<std::string>(diff.total_milliseconds())+" msec");
 }
 
@@ -1249,6 +1312,7 @@ void BdbStoreProvider::dequeue(qpid::broker::TransactionContext* ctxt,
                               const boost::intrusive_ptr<qpid::broker::PersistableMessage>& msg,
                               const qpid::broker::PersistableQueue& queue)
 {
+	boost::posix_time::ptime start= boost::posix_time::microsec_clock::local_time();
 	checkInit();
 	u_int64_t queueId (queue.getPersistenceId());
 	uint64_t messageId (msg->getPersistenceId());
@@ -1280,6 +1344,11 @@ void BdbStoreProvider::dequeue(qpid::broker::TransactionContext* ctxt,
 	{
 		if (this->mgmtObject) this->mgmtObject->inc_skippedDequeue();
 	}
+	boost::posix_time::time_duration diff = boost::posix_time::time_period(start,boost::posix_time::microsec_clock::local_time()).length();
+	if (diff.total_milliseconds()>100) {
+		cout<<"[D] Too late !"<<diff.total_milliseconds()<<endl;
+	}
+
     	msg->dequeueComplete();
 }
 
@@ -1403,9 +1472,8 @@ void BdbStoreProvider::recoverQueues(qpid::broker::RecoveryManager& recoverer,
             		QPID_LOG(error, "Cannot recover empty (null) queue name - ignoring and attempting to continue.");
             		break;
         	}
-        	jQueue = new JournalImpl(/*timer,*/ queueName,key.id, getJrnlHashDir(queueName), getBdbBaseDir(),num_jfiles,
-                                 /*defJournalGetEventsTimeout, defJournalFlushTimeout,*/agent,dbenv,
-                                 boost::bind(&BdbStoreProvider::journalDeleted, this, _1));
+        	jQueue = new JournalImpl(queueName,key.id, getJrnlHashDir(queueName), getBdbBaseDir(),num_jfiles,true,
+                                 agent,dbenv,boost::bind(&BdbStoreProvider::journalDeleted, this, _1));
         	{
 	            qpid::sys::Mutex::ScopedLock sl(journalListLock);
         	    journalList[key.id] = jQueue;
@@ -1461,11 +1529,21 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 			       MessageQueueMap& messageQueueMap)
 {
 	//Recover async Enqueue
-	std::set<PendingAsyncDequeue> adset;
-	std::set<PendingAsyncEnqueue> aeset;
+	PendingDequeueSet adset;
+	PendingEnqueueSet aeset;
 	aologger->recoverAsyncDequeue(adset);
 	aologger->recoverAsyncEnqueue(aeset);
-	QPID_LOG(notice,"Readed "<<adset.size()<<" pending async dequeue and "<<aeset.size()<<" pending async enqueue from log");
+	long adl = 0L;
+	long ael = 0L;
+	for (PendingEnqueueSet::iterator it=aeset.begin();it!=aeset.end();it++)
+	{
+		ael+=it->second.size();
+	}
+	for (PendingDequeueSet::iterator it=adset.begin();it!=adset.end();it++)
+	{
+		adl+=it->second.size();
+	}
+	QPID_LOG(notice,"Read "<<adl<<" pending async dequeue and "<<ael<<" pending async enqueue from log");
     	std::vector< std::string > toBeDeleteFromMongo;
 	uint64_t localLastPid=0ULL;
 	for (std::list<qpid::broker::RecoverableQueue::shared_ptr>::iterator it=recoveredJournal.begin();it !=recoveredJournal.end();it++) 
@@ -1473,12 +1551,10 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 		const std::string queueName =(*it)->getName().c_str();
 		try
         	{
-            		long rcnt = 0L;     // recovered msg count
-           		long acnt = 0L;    // accepted msg count
-	    		long tcnt = 0L;	//transient msg count 
+			QueueRecoverReport report;
             		u_int64_t thisHighestRid = 0ULL;
 			uint64_t thisLastPid = 0ULL;
-			thisHighestRid=decodeAndRecoverMsg(recoverer, *it, messageMap,messageQueueMap,toBeDeleteFromMongo,&adset,&aeset, rcnt, acnt,tcnt,thisLastPid);
+			thisHighestRid=decodeAndRecoverMsg(recoverer, *it, messageMap,messageQueueMap,toBeDeleteFromMongo,&adset,&aeset,report,thisLastPid);
 	    		if (highestRid == 0ULL)
 			        highestRid = thisHighestRid;
 		        else if (thisHighestRid - highestRid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
@@ -1487,7 +1563,9 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 			        localLastPid = thisLastPid;
 		        else if (thisLastPid - localLastPid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
 		                localLastPid = thisLastPid;
-	            	QPID_LOG(notice, "Recovered queue \"" << queueName << "\": " << rcnt << " messages recovered; " << acnt << " accepted while down; "<<tcnt <<" mark as transient.");
+	            	QPID_LOG(notice, "Recovered queue \"" << queueName << "\": " << report.rcnt <<" msgs recovered ("<<report.dbcnt<<" from DB,"
+				" "<<report.logcnt<<" from async log); " << report.acnt << " accepted while down; "<<report.aacnt<<" async accepted;"
+				" "<<report.tcnt <<" transient; "<<report.wacnt<<" wrong log.");
         	} catch (const mrg::journal::jexception& e) 
 		{
 		        THROW_STORE_EXCEPTION(std::string("Queue ") + queueName + ": recoverQueues() failed: " + e.what());
@@ -1527,50 +1605,86 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 	QPID_LOG(info, "Last Enqueued persistence id found: 0x" << std::hex << localLastPid << std::dec);
 	QPID_LOG(notice,"Resurrecting Async operation Pool..");
 	int resEnqCount=0;
-	std::set<PendingAsyncDequeue>::iterator adit;
+	PendingDequeueSet::iterator adit;
+	PendingDequeueSubset::iterator adsubit;
 	std::vector<PendingOperationId> uselessList;
-	for (std::set<PendingAsyncEnqueue>::iterator it=aeset.begin();it!=aeset.end();)
+	for (PendingEnqueueSet::iterator it=aeset.begin();it!=aeset.end();)
 	{
-		adit = adset.find(PendingOperationId(it->msgId,it->queueId));
-		if (adit!=adset.end())
+		for (PendingEnqueueSubset::iterator iit = it->second.begin();iit!=it->second.end();)
 		{
-			adset.erase(adit);
+			PendingAsyncEnqueue pae = iit->second;
+			bool notFound=true;
+			adit = adset.find(pae.queueId);
+			if (adit!=adset.end())
+			{
+				adsubit=adit->second.find(pae.msgId);
+				if (adsubit!=adit->second.end())
+				{
+					notFound= false;
+					adit->second.erase(adsubit);
+					if (adit->second.empty()) adset.erase(adit);
+					it->second.erase(iit++);
+					uselessList.push_back(pae.opId());					
+				} else 
+				{
+					notFound = true;
+				}
+			} else {
+				notFound=true;
+			}
+			if (notFound)
+			{
+				++iit;
+				JournalImpl* jc=0x0;
+				{
+					qpid::sys::Mutex::ScopedLock lock(journalListLock);
+					jc = journalList[pae.queueId];
+				}
+				if (jc!=0x0)
+				{
+					if (this->mgmtObject) this->mgmtObject->inc_pendingAsyncEnqueue();
+					if (this->options.enableSmartAsync) this->tracker.willEnqueue(pae.msgId,pae.queueId);
+					if(enqueuePool.schedule(boost::bind(&BdbStoreProvider::store,this,jc,pae.buff,pae.size,pae.msgId,pae.transient))) 
+					{	
+							resEnqCount++;
+					}
+				} else
+				{
+					QPID_LOG(error,"No Journal with queue id "+boost::lexical_cast<std::string>(pae.queueId));
+				}
+			}
+		}
+		if (it->second.empty()) 
+		{
 			aeset.erase(it++);
-			uselessList.push_back(it->opId());
-		} else 
+		} else
 		{
+			++it;
+		}
+
+	}
+	int resDeqCount=0;
+	for (PendingDequeueSet::iterator it=adset.begin();it!=adset.end();it++)
+	{
+		for (PendingDequeueSubset::iterator iit=it->second.begin();iit!=it->second.end();iit++)
+		{
+			PendingAsyncDequeue pad = iit->second;
 			JournalImpl* jc=0x0;
 			{
 				qpid::sys::Mutex::ScopedLock lock(journalListLock);
-				jc = journalList[it->queueId];
+				jc = journalList[pad.queueId];
 			}
-			if (this->mgmtObject) this->mgmtObject->inc_pendingAsyncEnqueue();
-			if (this->options.enableSmartAsync) this->tracker.willEnqueue(it->msgId,it->queueId);
-			if(enqueuePool.schedule(boost::bind(&BdbStoreProvider::store,this,jc,it->buff,it->size,it->msgId,it->transient))) 
-			{	
-				resEnqCount++;
+			if (jc!=0x0) 
+			{
+				if (this->mgmtObject) this->mgmtObject->inc_pendingAsyncDequeue();
+				if(dequeuePool.schedule(boost::bind(&BdbStoreProvider::async_dequeue,this,pad.msgId,jc))) 
+				{	
+					resDeqCount++;
+				}
+			} else
+			{
+				QPID_LOG(error,"No Journal with queue id "+boost::lexical_cast<std::string>(pad.queueId));
 			}
-			++it;
-		}
-	}
-	int resDeqCount=0;
-	for (std::set<PendingAsyncDequeue>::iterator it=adset.begin();it!=adset.end();it++)
-	{
-		JournalImpl* jc=0x0;
-		{
-			qpid::sys::Mutex::ScopedLock lock(journalListLock);
-			jc = journalList[it->queueId];
-		}
-		if (jc!=0x0) 
-		{
-			if (this->mgmtObject) this->mgmtObject->inc_pendingAsyncDequeue();
-			if(dequeuePool.schedule(boost::bind(&BdbStoreProvider::async_dequeue,this,it->msgId,jc))) 
-			{	
-				resDeqCount++;
-			}
-		} else
-		{
-			QPID_LOG(error,"No Journal with queue id "+boost::lexical_cast<std::string>(it->queueId));
 		}
 
 	}
@@ -1589,6 +1703,10 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 	this->deqLogCleanerThread=boost::shared_ptr<boost::thread>(new boost::thread
 	(
 		boost::bind(&AsyncOperationLogger::cleanDequeueLog,this->aologger,deqCleanTimeInterval,deqCleanSizeInterval)
+	));
+	this->eraserThread=boost::shared_ptr<boost::thread>(new boost::thread
+	(
+		boost::bind(&BdbStoreProvider::deleteUnusedLog,this)
 	));
 }
 
@@ -1743,8 +1861,8 @@ void BdbStoreProvider::store(JournalImpl* jc,
 			{
 		    		jc->enqueue_data(&buff[0], size, size, pid,tid,transient);
 			}
-			//cout << "Enqueue of #"<<pid<<" from "<<jc->id()<<"("<<jc->pid()<<")"<<endl;
 			aologger->log_enqueue_complete(pid,jc->pid());
+			//cout << "Enqueue of #"<<pid<<" in "<<jc->id()<<"("<<jc->pid()<<")"<<endl;
 			tracker.addPid(pid,jc->pid());
 			boost::posix_time::time_duration diff = boost::posix_time::time_period(start,boost::posix_time::microsec_clock::local_time()).length();
 			if (this->mgmtObject) 
@@ -1806,11 +1924,9 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 					MessageMap& messageMap,
 					MessageQueueMap& messageQueueMap,
 					std::vector<std::string>& foundMsg,
-					std::set<PendingAsyncDequeue>* adset,
-					std::set<PendingAsyncEnqueue>* aeset,
-                                      	long& rcnt,
-				      	long& acnt,
-				      	long& tcnt,
+					PendingDequeueSet* adset,
+					PendingEnqueueSet* aeset,
+					QueueRecoverReport& report,
 					uint64_t& lastPid)					
 {
 	uint64_t maxRid=0ULL;
@@ -1821,37 +1937,88 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 		std::vector< std::pair <uint64_t,std::string> > recovered;
 		std::vector< uint64_t > transientMsg;
 		std::vector< uint64_t > innerAcceptedMsg;
-		std::set<PendingAsyncDequeue>::iterator adit;
+		std::vector< uint64_t > asyncAcceptedMsg;
+		PendingDequeueSet::iterator adit;
+		PendingDequeueSubset::iterator adsubit;
 		jc->recoverMessages(recovered);
 		std::vector<PendingOperationId> transient_async; //Delete only from enq
 		std::vector<PendingOperationId> useless_async; //Delete from both enq and deq
 		std::vector<PendingOperationId> dequeue_completed_async; //Delete only from deq
-		std::set<uint64_t> penq_recovered;
+		MessageIdSet penq_recovered;
+		int first=0;
 		//Iterate over pending enqueue to add messages to the recovered list
-		for(std::set<PendingAsyncEnqueue>::iterator mit = aeset->begin();mit!=aeset->end();)
+		for(PendingEnqueueSet::iterator mit = aeset->begin();mit!=aeset->end();)
 		{
-			PendingAsyncEnqueue pae=*mit;
-			std::set<PendingAsyncDequeue>::iterator dmi=adset->find(pae.opId());
-			if (dmi!=adset->end()) //Dequeue start before Enqueue complete => no recover
+			for (PendingEnqueueSubset::iterator msubit = mit->second.begin();msubit!=mit->second.end();)
 			{
-				useless_async.push_back(pae.opId());
-				aeset->erase(mit++);
-				adset->erase(dmi);
-				innerAcceptedMsg.push_back(pae.msgId);
-			} else if(pae.transient) //Transient message => no recover
+				PendingAsyncEnqueue pae=msubit->second;
+				PendingDequeueSet::iterator dmi=adset->find(pae.queueId);
+				PendingDequeueSubset::iterator dmsubit;
+				bool notFound=true;
+				if (dmi!=adset->end())
+				{
+					dmsubit = dmi->second.find(pae.msgId);
+					if (dmsubit != dmi->second.end())
+					{
+						notFound=false;  //Dequeue start before Enqueue complete => no recover
+						useless_async.push_back(pae.opId());
+						mit->second.erase(msubit++);
+						dmi->second.erase(dmsubit);
+						if (dmi->second.empty()) adset->erase(dmi);
+						asyncAcceptedMsg.push_back(pae.msgId);
+						report.aacnt++;
+					} else
+					{
+						notFound=true;
+					}
+				} else 
+				{
+					notFound=true;
+				}
+				if (notFound)
+				{
+					if (pae.transient) //Transient message => no recover
+					{
+						transient_async.push_back(pae.opId());
+						mit->second.erase(msubit++);
+					} else	//Not Transient and not Dequeue Start => recover
+					{	
+						bool toRec=true;
+						if (jc->pid()==pae.queueId)
+						{
+							if (first<10)
+							{
+								if (jc->is_enqueued(pae.msgId))
+								{
+									mit->second.erase(msubit++);
+									aologger->log_enqueue_complete(pae.msgId,pae.queueId);
+									report.wacnt++;
+									toRec=false;
+								}
+								first++;
+							}
+							if (toRec)
+							{
+								recovered.push_back(std::pair<uint64_t,std::string>(pae.msgId,std::string(&pae.buff[0],pae.size)));
+								penq_recovered.insert(pae.msgId);
+							}
+						}
+						if (toRec) ++msubit;
+					}
+				}
+			}
+			if (mit->second.empty())
 			{
-				transient_async.push_back(pae.opId());
 				aeset->erase(mit++);
-			} else	//Not Transient and not Dequeue Start => recover
+			} else 
 			{	
-				recovered.push_back(std::pair<uint64_t,std::string>(pae.msgId,std::string(&pae.buff[0],pae.size)));
-				penq_recovered.insert(pae.msgId);
 				++mit;
 			}
 		}
 		for (std::vector< std::pair <uint64_t,std::string> >::iterator it=recovered.begin();it<recovered.end();it++) 
 		{	
 			PendingOperationId opid(it->first,jc->pid());
+			PendingAsyncOperation pao(it->first,jc->pid());
 			char* rawData= new char[it->second.size()];
 			memcpy(rawData,it->second.data(),it->second.size());
 			RecoverableMessage::shared_ptr msg;
@@ -1873,53 +2040,91 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 						std::vector<std::string>::iterator msgIt=std::find(acceptedFromMongo.begin(),acceptedFromMongo.end(),msgUid);	
 						if (msgIt!=acceptedFromMongo.end()) 
 						{
-							std::set<PendingAsyncEnqueue>::iterator emi=aeset->find(opid);
-							std::set<PendingAsyncDequeue>::iterator dmi=adset->find(opid);
+							PendingEnqueueSet::iterator emi=aeset->find(pao.queueId);
+							PendingEnqueueSubset::iterator emsubit;
+							PendingDequeueSet::iterator dmi;
+							PendingDequeueSubset::iterator dmsubit;
+							bool enf=true; //Enqueue not found
+							bool dnf=true; //Dequeue not found
 							if (emi!=aeset->end())
 							{
-								aeset->erase(emi);
-								if (dmi!=adset->end())
+								emsubit = emi->second.find(pao.msgId);
+								if (emsubit!=emi->second.end())
 								{
-									adset->erase(dmi);
-									useless_async.push_back(opid);
+									enf=false;
+									emi->second.erase(emsubit);
+									if (emi->second.empty()) aeset->erase(emi);
+									dmi = adset->find(pao.queueId);
+									dnf=true;
+									if (dmi!=adset->end())
+									{
+										dmsubit = dmi->second.find(pao.msgId);
+										if (dmsubit!=dmi->second.end())
+										{
+											dnf=false;
+											dmi->second.erase(dmsubit);
+											if (dmi->second.empty()) adset->erase(dmi);
+											useless_async.push_back(opid);
+										} else
+										{
+											dnf=true;
+										}
+										if (dnf) transient_async.push_back(opid);
+									} else 
+									{
+										dnf=true;
+									}
 								} else 
 								{
-									transient_async.push_back(opid);
+									enf=true;
 								}
 							} else
 							{
-								innerAcceptedMsg.push_back(it->first);
+								enf=true;
+							}
+							if (enf)
+							{
+								innerAcceptedMsg.push_back(pao.msgId);
 							}
 							foundMsg.push_back(*msgIt);
-							acnt++;
+							report.acnt++;
 							toRecover=false;
 						}
 					}
 				}
-				adit = adset->find(opid);
+				adit = adset->find(pao.queueId);
 				if (adit!=adset->end())
 				{
-					if (queue->getPersistenceId()!=adit->queueId)
+					adsubit = adit->second.find(pao.msgId);
+					if (adsubit != adit->second.end())
 					{
-						QPID_LOG(warning,"Message #"+boost::lexical_cast<std::string>(it->first)+" enqueued Queue "
-								"#"+boost::lexical_cast<std::string>(adit->queueId)+" but recovered from Queue "
-								"#"+boost::lexical_cast<std::string>(queue->getPersistenceId())+"! Executing async "
-								"dequeue anyway");
+						PendingAsyncDequeue pad = adsubit->second;
+						if (queue->getPersistenceId()!=pad.queueId)
+						{
+							QPID_LOG(warning,"Message #"+boost::lexical_cast<std::string>(pao.msgId)+" enqueued Queue "
+									"#"+boost::lexical_cast<std::string>(pad.queueId)+" but recovered from Queue "
+									"#"+boost::lexical_cast<std::string>(queue->getPersistenceId())+"! Executing "
+									"async dequeue anyway");
+						}
+						asyncAcceptedMsg.push_back(pao.msgId);
+						report.aacnt++;
+						adit->second.erase(adsubit);
+						if (adit->second.empty()) adset->erase(adit);
+						dequeue_completed_async.push_back(opid);
+						toRecover=false;
 					}
-					innerAcceptedMsg.push_back(it->first);
-					adset->erase(adit);
-					dequeue_completed_async.push_back(opid);
-					toRecover=false;
 				}
-				set<uint64_t>::iterator mxIt = penq_recovered.find(it->first);
+				MessageIdSet::iterator mxIt = penq_recovered.find(pao.msgId);
+				bool ape_recovered=false;
 				if (mxIt!=penq_recovered.end())
 				{
 					penq_recovered.erase(mxIt++);
+					ape_recovered=true;
 				} else 
 				{
-					lastPid=max(it->first,lastPid);
+					lastPid=max(pao.msgId,lastPid);
 				}
-				maxRid=max(it->first,maxRid);
+				maxRid=max(pao.msgId,maxRid);
 				if (toRecover) 
 				{
 					msg = recovery.recoverMessage(headerBuff);
@@ -1929,25 +2134,34 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 					uint64_t contentSize = msgBuff.getSize() - contentOffset;
 					if (msg->loadContent(contentSize)) 
 					{
-					    //now read the content
-					    qpid::framing::Buffer contentBuff(msgBuff.getPointer() + contentOffset, contentSize);
-					    msg->decodeContent(contentBuff);
-					    rcnt++;
-					    messageMap[it->first]=msg;
-					    messageQueueMap[it->first].push_back(qpid::store::QueueEntry(queue->getPersistenceId()));
+						//now read the content
+						qpid::framing::Buffer contentBuff(msgBuff.getPointer() + contentOffset, contentSize);
+					    	msg->decodeContent(contentBuff);
+					    	report.rcnt++;
+					    	if (ape_recovered)
+					    	{
+					    		report.logcnt++;
+					    	} else
+						{
+							report.dbcnt++;
+						}
+						messageMap[it->first]=msg;
+						messageQueueMap[it->first].push_back(qpid::store::QueueEntry(queue->getPersistenceId()));
 					}
 				}
 			} else 
 			{
 				transientMsg.push_back(it->first);
-				tcnt++;
+				report.tcnt++;
 			}
 			delete [] rawData;
 		}
 		jc->register_as_transient(transientMsg);
 		jc->register_as_accepted(innerAcceptedMsg);
+		jc->register_as_accepted(asyncAcceptedMsg);
 		transientMsg.clear();
 		innerAcceptedMsg.clear();
+		asyncAcceptedMsg.clear();
 		recovered.clear();
 		aologger->log_mass_enqueue_complete(transient_async);
 		aologger->log_mass_dequeue_complete(dequeue_completed_async);

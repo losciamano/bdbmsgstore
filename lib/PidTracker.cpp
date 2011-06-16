@@ -75,6 +75,7 @@ bool PidTracker::addDuplicate(uint64_t pid,uint64_t qid)
 		MessageIdSet localset;
 		localset.insert(pid);
 		dupMap.insert(QMMap::value_type(qid,localset));
+		localset.clear();
 	}
 	return true;
 }
@@ -128,6 +129,7 @@ bool PidTracker::willEnqueue(uint64_t pid,uint64_t qid)
 			MessageIdSet localset;
 			localset.insert(pid);
 			pendMap.insert(QMMap::value_type(qid,localset));
+			localset.clear();
 			return true;
 		}
 	}

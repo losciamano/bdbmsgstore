@@ -65,14 +65,13 @@ JournalImpl::JournalImpl(/*qpid::sys::Timer& timer_,*/
                          const std::string& journalDirectory,
                          const std::string& bdbDir,
 			 const int num_jfiles,
-                         //const qpid::sys::Duration getEventsTimeout,
+			 const bool create_bdb,
                          //const qpid::sys::Duration flushTimeout,
                          qpid::management::ManagementAgent* a,
                          boost::shared_ptr<DbEnv>& de,
                          DeleteCallback onDelete)
                          :
                          //timer(timer_),
-                         //getEventsTimerSetFlag(false),
                          writeActivityFlag(false),
                          flushTriggeredFlag(true),
                          _is_init(false),
@@ -108,10 +107,19 @@ JournalImpl::JournalImpl(/*qpid::sys::Timer& timer_,*/
         _agent->addObject(_mgmtObject, 0, true);
     }
 
-    log(LOG_NOTICE, "Created");
+    if (!create_bdb) 
+    {
+    	this->num_jfiles=0;
+	messageDbs.clear();
+    }
     std::ostringstream oss;
+    oss <<  "Created ";
     oss << "Journal directory = \"" << journalDirectory << "\"; Bdb Directory = \"" << bdbDir << "\"; Num JFiles : "<<num_jfiles<<"";
-    log(LOG_DEBUG, oss.str());
+    if (!create_bdb)
+    {
+    	oss << "No bdb created : Dummy Journal";
+    }
+    log(LOG_NOTICE, oss.str());
 }
 
 JournalImpl::~JournalImpl()
@@ -129,6 +137,7 @@ JournalImpl::~JournalImpl()
 		if(messageDbs[k].get()) 
 		{
 	            	messageDbs[k]->close(0);
+			messageDbs[k].reset();
 	    	} else 
 		{
 	        	log(LOG_DEBUG,"Null message store");
@@ -166,7 +175,7 @@ void JournalImpl::init_message_db()
 	// against the environment at the time of recovery, as recovery invalidates the environment.
 	if (!_is_init) 
 	{
-		for (unsigned int k=0;k<this->messageDbs.size();k++) 
+		for (int k=0;k<this->num_jfiles;k++) 
 		{
 			messageDbs[k].reset(new Db(dbEnv.get(), 0));
 			messageDbs[k]->set_bt_compare(&bt_compare_func);
@@ -251,6 +260,7 @@ JournalImpl::recover(/*const u_int16_t num_jfiles,
 void JournalImpl::recoverMessages(std::vector< std::pair < uint64_t,std::string> >&recovered) 
 {
 	this->init_message_db();
+	if (!create_bdb) return;
         std::vector<Cursor> messageCursors(this->num_jfiles);
 	std::vector<bool> cursorsDone(this->num_jfiles,false);
 	for (int k=0;k<this->num_jfiles;k++) {
@@ -300,6 +310,7 @@ JournalImpl::recover_complete()
 bool
 JournalImpl::loadMsgContent(u_int64_t rid, std::string& data, size_t length, size_t offset)
 {
+	if (!create_bdb) return false;
 	boost::shared_ptr<Db> messageDb(messageDbs[rid%num_jfiles]);
         size_t preambleLength = sizeof(u_int32_t)+sizeof(u_int8_t)/*header size + transient flag*/;
         u_int64_t id(rid);      
@@ -331,6 +342,7 @@ bool JournalImpl::store_msg(boost::shared_ptr<Db> db,
                              const uint64_t pid,
                              Dbt& p)
 {
+	if (!create_bdb) return false;
 	writeActivityFlag=true;
         uint64_t id(pid);
         IdDbt key(id);
@@ -379,83 +391,89 @@ void JournalImpl::register_as_accepted(std::vector<uint64_t>& acList)
 
 void JournalImpl::discard_transient_message() 
 {
-        int transientCount=0;
-        bool errorFlag=false;
-        if (transientList.empty()) 
-        {
-                return;
-        }
-        std::stringstream ss;
-        ss << "Start deleting "<<transientList.size()<<" transient messages...";
-        log(LOG_INFO,ss.str());
-        for (std::list<uint64_t>::iterator it=transientList.begin();it!=transientList.end();it++) 
-        {
-                uint64_t id(*it);
-                IdDbt key(id);		
-                int dbErr = messageDbs[id%num_jfiles]->del(0,&key,DB_AUTO_COMMIT);
-                if (dbErr!=0)
-                {
-                        log(LOG_ERROR,"Del "+boost::lexical_cast<std::string>(id)+" => Db->del Exit Status : "+boost::lexical_cast<std::string>(dbErr));
-                }
-                if (dbErr!=0) 
-                {
-                        errorFlag=true;
-                } else 
-                {
-                        transientCount++;
-                }
-        }
-        transientList.clear();
-	for (int k=0;k<this->num_jfiles;k++)
+	if (create_bdb) 
 	{
-	        messageDbs[k]->sync(0);
+		int transientCount=0;
+		bool errorFlag=false;
+		if (transientList.empty()) 
+		{
+			return;
+		}
+		std::stringstream ss;
+		ss << "Start deleting "<<transientList.size()<<" transient messages...";
+		log(LOG_INFO,ss.str());
+		for (std::list<uint64_t>::iterator it=transientList.begin();it!=transientList.end();it++) 
+		{
+			uint64_t id(*it);
+			IdDbt key(id);		
+			int dbErr = messageDbs[id%num_jfiles]->del(0,&key,DB_AUTO_COMMIT);
+			if (dbErr!=0)
+			{
+				log(LOG_ERROR,"Del "+boost::lexical_cast<std::string>(id)+" => Db->del Exit Status : "+boost::lexical_cast<std::string>(dbErr));
+			}
+			if (dbErr!=0) 
+			{
+				errorFlag=true;
+			} else 
+			{
+				transientCount++;
+			}
+		}
+		for (int k=0;k<this->num_jfiles;k++)
+		{
+			messageDbs[k]->sync(0);
+		}
+		std::stringstream ss2;
+		ss2<<transientCount<<" transient message deleted from Dbs.";
+		if (errorFlag)
+		{
+			ss2<<" Some messages have encountered an error during deleting.";
+		}
+		log(LOG_INFO,ss2.str());
 	}
-        std::stringstream ss2;
-        ss2<<transientCount<<" transient message deleted from Dbs.";
-        if (errorFlag)
-	{
-                ss2<<" Some messages have encountered an error during deleting.";
-        }
-        log(LOG_INFO,ss2.str());
+	transientList.clear();
 }
 
 void JournalImpl::discard_accepted_message()
 {
-        int acceptedCount=0;
-        bool errorFlag=false;
-        if (acceptedList.empty())
+	if (create_bdb) 
 	{
-                return;
-        }
-        std::stringstream ss;
-        ss << "Start deleting "<<acceptedList.size()<<" accepted messages...";
-        log(LOG_INFO,ss.str());
-        for (std::list<uint64_t>::iterator it=acceptedList.begin();it!=acceptedList.end();it++) 
-	{
-                uint64_t id(*it);
-                IdDbt key(id);
-		int resp = messageDbs[id%num_jfiles]->del(0,&key,DB_AUTO_COMMIT);
-                if ((resp!=0)&&(resp!=DB_NOTFOUND))
+	        int acceptedCount=0;
+	        bool errorFlag=false;
+	        if (acceptedList.empty())
 		{
-                        errorFlag=true;
-                } else
+	                return;
+	        }
+	        std::stringstream ss;
+	        ss << "Start deleting "<<acceptedList.size()<<" accepted messages...";
+	        log(LOG_INFO,ss.str());
+	        for (std::list<uint64_t>::iterator it=acceptedList.begin();it!=acceptedList.end();it++) 
 		{
-                        acceptedCount++;
-                }
-        }
-        acceptedList.clear();
-        for (int k=0;k<this->num_jfiles;k++)
-	{
-	        messageDbs[k]->sync(0);
+        	        uint64_t id(*it);
+	                IdDbt key(id);
+			int resp = messageDbs[id%num_jfiles]->del(0,&key,DB_AUTO_COMMIT);
+	                if ((resp!=0)&&(resp!=DB_NOTFOUND))
+			{
+	                        errorFlag=true;
+        	        } else
+			{
+	                        acceptedCount++;
+	                }
+	        }
+	        for (int k=0;k<this->num_jfiles;k++)
+		{
+	        	messageDbs[k]->sync(0);
+		}
+	
+	        std::stringstream ss2;
+	        ss2<<acceptedCount<<" accepted message deleted from Db.";
+	        if (errorFlag)
+		{
+        	        ss2<<" Some messages have encountered an error during deleting.";
+	        }
+	        log(LOG_INFO,ss2.str());
 	}
-
-        std::stringstream ss2;
-        ss2<<acceptedCount<<" accepted message deleted from Db.";
-        if (errorFlag)
-	{
-                ss2<<" Some messages have encountered an error during deleting.";
-        }
-        log(LOG_INFO,ss2.str());
+        acceptedList.clear();
 }
 void JournalImpl::compact_message_database() 
 {
@@ -478,6 +496,7 @@ void JournalImpl::compact_message_database()
 
 void JournalImpl::remove_msg(boost::shared_ptr<Db> db, const uint64_t pid)
 {
+	if (!create_bdb) return;
 	writeActivityFlag=true;
 	uint64_t id(pid);
 	IdDbt key(id);
@@ -501,6 +520,7 @@ void JournalImpl::remove_msg(boost::shared_ptr<Db> db, const uint64_t pid)
 void JournalImpl::enqueue_data(char* data_buff, const size_t /*tot_data_len*/, const size_t this_data_len, 
                                         uint64_t pid,const std::string&/* xid*/, const bool /*transient*/) 
 {
+	if (!create_bdb) return;
         //log(LOG_INFO,"enqueue_data("+boost::lexical_cast<std::string>(pid)+")");	
         try
         {
@@ -515,6 +535,7 @@ void JournalImpl::enqueue_data(char* data_buff, const size_t /*tot_data_len*/, c
 
 void JournalImpl::dequeue_data(const uint64_t pid, const std::string&/* xid*/, const bool /*txn_coml_commit*/)
 {
+	if (!create_bdb) return;
 
         //log(LOG_INFO,"dequeue_data("+boost::lexical_cast<std::string>(pid)+")");
         try 
@@ -556,6 +577,7 @@ JournalImpl::stop(bool/* block_till_aio_cmpl*/)
 bool
 JournalImpl::flush()
 {
+	if (!create_bdb) return true;
 	//TODO: make specific flush flag for each database
 	timespec start,end;
 	clock_gettime(CLOCK_REALTIME,&start);
@@ -580,6 +602,7 @@ JournalImpl::flush()
 
 bool JournalImpl::is_enqueued(const u_int64_t rid,bool /*ignore_lock*/)
 {
+	if (!create_bdb) return false;
         u_int64_t id(rid);      
         IdDbt key(id);
         //log(LOG_INFO,"is_enqueued("+boost::lexical_cast<std::string>(rid)+")");

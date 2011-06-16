@@ -307,6 +307,8 @@ bdbstoreprovider_la_SOURCES = \
   AsyncOperationLogger.h	\
   PidTracker.cpp		\
   PidTracker.h			\
+  PendingOperationType.h	\
+  PendingOperationSet.h		\
   jrnl/jdir.cpp                 \
   jrnl/jerrno.cpp               \
   jrnl/jexception.cpp           \

@@ -177,6 +177,7 @@ int AsyncOperationLogger::log_mass_dequeue_complete(vector<PendingOperationId>& 
 			retIndex=log_dequeue_complete(pid_list[k]);
 		}
 	}
+	if (bigbuff) free(bigbuff);
 	return retIndex;
 }
 
@@ -216,6 +217,7 @@ int AsyncOperationLogger::log_mass_enqueue_complete(vector<PendingOperationId>& 
 			retIndex=log_enqueue_complete(pid_list[k]);
 		}
 	}
+	if (bigbuff) free(bigbuff);
 	return retIndex;
 
 }
@@ -275,12 +277,12 @@ int AsyncOperationLogger::log_enqueue_complete(uint64_t pid,uint64_t qid)
 	return retIndex;
 }
 
-int AsyncOperationLogger::recoverAsyncDequeue(std::set<PendingAsyncDequeue>& adset)
+int AsyncOperationLogger::recoverAsyncDequeue(PendingDequeueSet& adset)
 {
 	{
 		boost::mutex::scoped_lock lock(this->dequeueMutex);
 		if (dequeueFile.is_open()) dequeueFile.close();
-		std::set<PendingOperationId> lostSet;
+		PendingOperationSet lostSet;
 		for (int k=0;k<2;k++) 
 		{
 			std::string logFilename = buildDeqLogName(k);
@@ -290,19 +292,23 @@ int AsyncOperationLogger::recoverAsyncDequeue(std::set<PendingAsyncDequeue>& ads
 		this->dequeueFileIndex=0;
 		dequeueFile.open(buildDeqLogName(dequeueFileIndex).c_str(),ios_base::out|ios_base::app|ios_base::binary);
 	}
-	for (std::set<PendingAsyncDequeue>::iterator it=adset.begin();it!=adset.end();it++)
+	for (PendingDequeueSet::iterator it=adset.begin();it!=adset.end();it++)
 	{
-		log_dequeue_start(it->msgId,it->queueId);
+		for (PendingDequeueSubset::iterator iit=it->second.begin();iit!=it->second.end();iit++)
+		{
+			PendingAsyncDequeue pad = iit->second;
+			log_dequeue_start(pad.msgId,pad.queueId);
+		}
 	}
 	return 0;
 }
 
-int AsyncOperationLogger::recoverAsyncEnqueue(std::set<PendingAsyncEnqueue>& aeset)
+int AsyncOperationLogger::recoverAsyncEnqueue(PendingEnqueueSet& aeset)
 {
 	{
 		boost::mutex::scoped_lock lock(this->enqueueMutex);
 		if (enqueueFile.is_open()) enqueueFile.close();
-		std::set<PendingOperationId> lostSet;	
+		PendingOperationSet lostSet;	
 		for (int k=0;k<2;k++) 
 		{
 			std::string logFilename = buildEnqLogName(k);
@@ -312,10 +318,13 @@ int AsyncOperationLogger::recoverAsyncEnqueue(std::set<PendingAsyncEnqueue>& aes
 		this->enqueueFileIndex=0;
 		enqueueFile.open(buildEnqLogName(enqueueFileIndex).c_str(),ios_base::out|ios_base::app|ios_base::binary);
 	}
-	for (std::set<PendingAsyncEnqueue>::iterator it=aeset.begin();it!=aeset.end();it++)
+	for (PendingEnqueueSet::iterator it=aeset.begin();it!=aeset.end();it++)
 	{
-		PendingAsyncEnqueue pae = *it;
-		log_enqueue_start(pae.msgId,pae.queueId,pae.buff,pae.size,pae.transient);
+		for (PendingEnqueueSubset::iterator iit=it->second.begin();iit!=it->second.end();iit++)
+		{
+			PendingAsyncEnqueue pae = iit->second;
+			log_enqueue_start(pae.msgId,pae.queueId,pae.buff,pae.size,pae.transient);
+		}
 	}
 
 	return 0;
@@ -352,8 +361,8 @@ void AsyncOperationLogger::cleanEnqueueLog(int intervalInSeconds,int warningSize
 			enqueueFile.open(buildEnqLogName(this->enqueueFileIndex).c_str(),ios_base::out|ios_base::app|ios_base::binary);
 		}
 		//Now work on the unused file
-		std::set<PendingOperationId> lostSet;
-		std::set<PendingAsyncEnqueue> aeset;
+		PendingOperationSet lostSet;
+		PendingEnqueueSet aeset;
 		extractPendingEnqueueFromFile(aeset,handlingIndex,lostSet);
 		std::string handlingLogname=buildEnqLogName(handlingIndex);
 		std::string tmpLogName=buildEnqLogName(0,true);
@@ -361,20 +370,30 @@ void AsyncOperationLogger::cleanEnqueueLog(int intervalInSeconds,int warningSize
 		tmplog.open(tmpLogName.c_str(),ios_base::out|ios_base::app|ios_base::binary);
 		if (tmplog)
 		{
-			for (std::set<PendingAsyncEnqueue>::iterator it=aeset.begin();it!=aeset.end();it++)
+			for (PendingEnqueueSet::iterator it=aeset.begin();it!=aeset.end();it++)
 			{
-				PendingAsyncEnqueue pae=*it;
-				log_enqueue_start_on_file(pae.msgId,pae.queueId,pae.buff,pae.size,pae.transient,&tmplog,wbuff);
+				for (PendingEnqueueSubset::iterator iit=it->second.begin();iit!=it->second.end();iit++)
+				{
+					PendingAsyncEnqueue pae=iit->second;
+					log_enqueue_start_on_file(pae.msgId,pae.queueId,pae.buff,pae.size,pae.transient,&tmplog,wbuff);
+				}
 			}
 			tmplog.close();
 			remove(handlingLogname.c_str());
 			rename(tmpLogName.c_str(),handlingLogname.c_str());
 		}		
-		for (std::set<PendingOperationId>::iterator it = lostSet.begin();it!=lostSet.end();it++)
+		for (PendingOperationSet::iterator it = lostSet.begin();it!=lostSet.end();it++)
 		{
-			log_enqueue_complete(*it);
+			for (PendingOperationSubset::iterator iit=it->second.begin();iit!=it->second.end();iit++)
+			{
+				PendingAsyncOperation pao =iit->second;
+				log_enqueue_complete(pao.msgId,pao.queueId);
+			}
 		}
+		aeset.clear();
+		lostSet.clear();
 	}
+	free(wbuff);
 }
 
 void AsyncOperationLogger::cleanDequeueLog(int intervalInSeconds,int warningSize)
@@ -408,8 +427,8 @@ void AsyncOperationLogger::cleanDequeueLog(int intervalInSeconds,int warningSize
 			dequeueFile.open(buildDeqLogName(this->dequeueFileIndex).c_str(),ios_base::out|ios_base::app|ios_base::binary);
 		}
 		//Now work on the unused file
-		std::set<PendingOperationId> lostSet;
-		std::set<PendingAsyncDequeue> adset;
+		PendingOperationSet lostSet;
+		PendingDequeueSet adset;
 		extractPendingDequeueFromFile(adset,handlingIndex,lostSet);
 		std::string handlingLogname=buildDeqLogName(handlingIndex);
 		std::string tmpLogName=buildDeqLogName(0,true);
@@ -417,23 +436,33 @@ void AsyncOperationLogger::cleanDequeueLog(int intervalInSeconds,int warningSize
 		tmplog.open(tmpLogName.c_str(),ios_base::out|ios_base::app|ios_base::binary);
 		if (tmplog)
 		{
-			for (std::set<PendingAsyncDequeue>::iterator it=adset.begin();it!=adset.end();it++)
+			for (PendingDequeueSet::iterator it=adset.begin();it!=adset.end();it++)
 			{
-				PendingAsyncDequeue pad=*it;
-				log_dequeue_start_on_file(pad.msgId,pad.queueId,&tmplog,wbuff);
+				for (PendingDequeueSubset::iterator iit = it->second.begin();iit!=it->second.end();iit++)
+				{
+					PendingAsyncDequeue pad=iit->second;
+					log_dequeue_start_on_file(pad.msgId,pad.queueId,&tmplog,wbuff);
+				}
 			}
 			tmplog.close();
 			remove(handlingLogname.c_str());
 			rename(tmpLogName.c_str(),handlingLogname.c_str());
 		}		
-		for (std::set<PendingOperationId>::iterator it = lostSet.begin();it!=lostSet.end();it++)
+		for (PendingOperationSet::iterator it = lostSet.begin();it!=lostSet.end();it++)
 		{
-			log_dequeue_complete(*it);
+			for (PendingOperationSubset::iterator iit = it->second.begin(); iit!=it->second.end();iit++)
+			{
+				PendingAsyncOperation pao =iit->second;
+				log_dequeue_complete(pao.msgId,pao.queueId);
+			}
 		}
+		adset.clear();
+		lostSet.clear();
 	}
+	free(wbuff);
 }
 
-void AsyncOperationLogger::extractPendingDequeueFromFile(std::set<PendingAsyncDequeue>& adset,int fileIndex,std::set<PendingOperationId>& lostSet)
+void AsyncOperationLogger::extractPendingDequeueFromFile(PendingDequeueSet& adset,int fileIndex,PendingOperationSet& lostSet)
 {
 	char* startbuff = (char*) malloc ( this->deqStartSize);
 	char* completebuff = (char*) malloc (this->deqCompleteSize);
@@ -450,8 +479,11 @@ void AsyncOperationLogger::extractPendingDequeueFromFile(std::set<PendingAsyncDe
 			if (!infile.fail()) 
 			{
 				uint64_t pid;
-				std::set<PendingOperationId>::iterator mapit;
-				std::set<PendingAsyncDequeue>::iterator outit;
+				bool notFound=true;
+				PendingOperationSet::iterator mapit;
+				PendingOperationSubset::iterator mapsubit;
+				PendingDequeueSet::iterator outit;
+				PendingDequeueSubset::iterator outsubit;
 				switch (opcode)
 				{
 					case AsyncOperationLogger::aolog_dequeue_start:
@@ -464,13 +496,40 @@ void AsyncOperationLogger::extractPendingDequeueFromFile(std::set<PendingAsyncDe
 							int buffindex=1+char_for_lluint;						
 							memcpy(&qid,&startbuff[buffindex],sizeof(uint64_t));
 							PendingOperationId opid(pid,qid);
-							mapit = lostSet.find(opid);
+							mapit = lostSet.find(qid);
+							notFound=true;
 							if (mapit!=lostSet.end())
 							{
-								lostSet.erase(mapit);
-							} else 
+								mapsubit = mapit->second.find(pid);
+								if (mapsubit!=mapit->second.end())
+								{
+									notFound=false;
+									mapit->second.erase(mapsubit);
+									if (mapit->second.empty()) lostSet.erase(mapit);
+								} else 
+								{
+									notFound=true;
+								}
+							} else {
+								notFound=true;
+							}
+							if (notFound)
 							{
-								adset.insert(PendingAsyncDequeue(pid,qid));
+								outit = adset.find(qid);
+								if (outit != adset.end()) 
+								{
+									outit->second.insert(
+										PendingDequeueSubset::value_type(pid,PendingAsyncDequeue(pid,qid))
+									);
+								} else 
+								{
+									PendingDequeueSubset sset;
+									sset.insert(
+										PendingDequeueSubset::value_type(pid,PendingAsyncDequeue(pid,qid))
+									);
+									adset.insert(PendingDequeueSet::value_type(qid,sset));
+									sset.clear();
+								}									
 							}
 						}
 						break;
@@ -484,28 +543,58 @@ void AsyncOperationLogger::extractPendingDequeueFromFile(std::set<PendingAsyncDe
 							int buffindex=1+char_for_lluint;						
 							memcpy(&qid,&completebuff[buffindex],sizeof(uint64_t));
 							PendingOperationId opid(pid,qid);
-							outit = adset.find(opid);
+							outit = adset.find(qid);
+							notFound=true;
 							if (outit!=adset.end()) 
 							{
-								adset.erase(outit);
+								outsubit = outit->second.find(pid);
+								if (outsubit!=outit->second.end())
+								{
+									notFound=false;
+									outit->second.erase(outsubit);
+									if (outit->second.empty()) adset.erase(outit);
+								} else
+								{
+									notFound=true;
+								}
 							} else
 							{
-								lostSet.insert(opid);
+								notFound=true;
+							}							
+							if (notFound)
+							{
+								mapit = lostSet.find(qid);
+								if (mapit != lostSet.end())
+								{
+									mapit->second.insert(
+										PendingOperationSubset::value_type(pid,PendingAsyncOperation(pid,qid))
+									);
+								} else
+								{
+									PendingOperationSubset sset;
+									sset.insert(
+										PendingOperationSubset::value_type(pid,PendingAsyncOperation(pid,qid))
+									);
+									lostSet.insert(PendingOperationSet::value_type(qid,sset));
+									sset.clear();
+								}
 							}
 						}
 						break;
 					default:
+						cout<<"[D] That's not good : what's that "<<opcode<<"?"<<endl;
 						break;
 
 				}
 			}
 		} while (!infile.eof());
 		infile.close();
-	}		
-
+	}	
+	if (startbuff)	free(startbuff);
+	if (completebuff) free(completebuff);
 }
 
-void AsyncOperationLogger::extractPendingEnqueueFromFile(std::set<PendingAsyncEnqueue>& aeset,int fileIndex,std::set<PendingOperationId>& lostSet) 
+void AsyncOperationLogger::extractPendingEnqueueFromFile(PendingEnqueueSet& aeset,int fileIndex,PendingOperationSet& lostSet) 
 {
 	char* startbuff = (char*) malloc ( this->enqDataPreambleSize);
 	char* completebuff = (char*) malloc (this->enqCompleteSize);
@@ -521,8 +610,11 @@ void AsyncOperationLogger::extractPendingEnqueueFromFile(std::set<PendingAsyncEn
 			if (!infile.fail())
 			{
 				uint64_t pid;
-				std::set<PendingOperationId>::iterator mapit;
-				std::set<PendingAsyncEnqueue>::iterator outit;
+				bool notFound=true;
+				PendingOperationSet::iterator mapit;
+				PendingOperationSubset::iterator mapsubit;
+				PendingEnqueueSet::iterator outit;
+				PendingEnqueueSubset::iterator outsubit;
 				switch (opcode)
 				{
 					case AsyncOperationLogger::aolog_enqueue_start:
@@ -545,17 +637,41 @@ void AsyncOperationLogger::extractPendingEnqueueFromFile(std::set<PendingAsyncEn
 							PendingAsyncEnqueue pae(pid,qid,transientFlag);
 							pae.size=size;
 							pae.buff=std::vector<char>(size);
-							infile.read(&pae.buff[0],size);
+							infile.read(&pae.buff[0],size);							
 							if (!infile.fail()) 
 							{
 								PendingOperationId opid(pid,qid);
-								mapit = lostSet.find(opid);
+								notFound = true;
+								mapit = lostSet.find(qid);
 								if (mapit!=lostSet.end())
 								{
-									lostSet.erase(mapit);
+									mapsubit = mapit->second.find(pid);
+									if (mapsubit != mapit->second.end())
+									{
+										notFound=false;
+										mapit->second.erase(mapsubit);
+										if (mapit->second.empty()) lostSet.erase(mapit);
+									} else
+									{
+										notFound=true;
+									}
 								} else 
 								{
-									aeset.insert(pae);
+									notFound=true;
+								}
+								if (notFound)
+								{
+									outit = aeset.find(qid);
+									if (outit != aeset.end()) 
+									{
+										outit->second.insert(PendingEnqueueSubset::value_type(pid,pae));
+									} else 
+									{
+										PendingEnqueueSubset sset;
+										sset.insert(PendingEnqueueSubset::value_type(pid,pae));
+										aeset.insert(PendingEnqueueSet::value_type(qid,sset));
+										sset.clear();
+									}				
 								}
 							}
 						}
@@ -570,25 +686,54 @@ void AsyncOperationLogger::extractPendingEnqueueFromFile(std::set<PendingAsyncEn
 							int buffindex=1+char_for_lluint;
 							memcpy(&qid,&completebuff[buffindex],sizeof(uint64_t));
 							PendingOperationId opid(pid,qid);
-							outit = aeset.find(opid);
+							notFound=true;
+							outit = aeset.find(qid);
 							if (outit!=aeset.end()) 
 							{
-								aeset.erase(outit);
+								outsubit = outit->second.find(pid);
+								if (outsubit!=outit->second.end())
+								{
+									notFound=false;
+									outit->second.erase(outsubit);
+									if (outit->second.empty()) aeset.erase(outit);
+								} else 
+								{
+									notFound=true;
+								}
 							} else
 							{
-								lostSet.insert(opid);
+								notFound=true;
+							}
+							if (notFound)
+							{
+								mapit = lostSet.find(qid);
+								if (mapit != lostSet.end())
+								{
+									mapit->second.insert(
+										PendingOperationSubset::value_type(pid,PendingAsyncOperation(pid,qid))
+									);
+								} else
+								{
+									PendingOperationSubset sset;
+									sset.insert(
+										PendingOperationSubset::value_type(pid,PendingAsyncOperation(pid,qid))
+									);
+									lostSet.insert(PendingOperationSet::value_type(qid,sset));
+									sset.clear();
+								}
 							}
 						}
 						break;
 					default:
+						cout<<"[E] That's not good : what's that "<<opcode<<"?"<<endl;
 						break;
 				}
 			}
 		} while(!infile.eof());
 		infile.close();
-
 	}
-
+	if (startbuff)	free(startbuff);
+	if (completebuff) free(completebuff);
 }
 
 int AsyncOperationLogger::log_enqueue_start_on_file(uint64_t pid,
@@ -652,28 +797,24 @@ int qpid::store::bdb::operator!=(const PendingAsyncOperation& left,const Pending
 }
 int qpid::store::bdb::operator<(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {
-	int ret=((left.msgId<right.msgId)&&(left.queueId<right.queueId));
-	if (ret) return ret;
-	ret = ((left.msgId==right.msgId)&&(left.queueId<right.queueId));
-	if (ret) return ret;
-	ret= ((left.queueId==right.queueId)&&(left.msgId<right.msgId));
-	return ret;
+	if (left.msgId < right.msgId) return true;
+	if (left.queueId < right.queueId) return true;
+	return false;
 }
 int qpid::store::bdb::operator>(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {
-	int ret=((left.msgId>right.msgId)&&(left.queueId>right.queueId));
-	if (ret) return ret;
-	ret = ((left.msgId==right.msgId)&&(left.queueId>right.queueId));
-	if (ret) return ret;
-	ret= ((left.queueId==right.queueId)&&(left.msgId>right.msgId));
-	return ret;
+	if (left.msgId>right.msgId) return true;
+	if (left.queueId>right.queueId) return true;
+	return false;
 }
 int qpid::store::bdb::operator<=(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {
-	return ((left.msgId<=right.msgId)&&(left.queueId<=right.queueId));
+	if ((left==right)||(left<right)) return true;
+	return false;
 }
 int qpid::store::bdb::operator>=(const PendingAsyncOperation& left,const PendingAsyncOperation& right)
 {
-	return ((left.msgId>=right.msgId)&&(left.queueId>=right.queueId));
+	if ((left==right)||(left>right)) return true;
+	return false;
 }
 

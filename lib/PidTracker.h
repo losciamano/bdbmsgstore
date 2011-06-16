@@ -25,7 +25,7 @@ class PidRecord
 		PidRecord(const PidRecord& ref);
 		~PidRecord()
 		{
-			boost::mutex::scoped_lock lock(this->pidMutex);
+			//boost::mutex::scoped_lock lock(this->pidMutex);
 			gapPidSet.clear();
 		}
 		PidRecord& operator=(const PidRecord& other)
@@ -61,6 +61,7 @@ class PidTracker
 		~PidTracker()
 		{
 			dupMap.clear();
+			pendMap.clear();
 		}
 		void reset(uint64_t pid=0)
 		{

@@ -151,6 +151,8 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
 	
     int num_jfiles;
 
+    bool create_bdb;
+
     /**
     *	Pointer to the Management Agent
     **/
@@ -194,6 +196,7 @@ class JournalImpl : public qpid::broker::ExternalQueueStore
                 const std::string& journalDirectory,
                 const std::string& bdbDir,
 		const int num_jfiles,
+		const bool create_bdb,
  //               const qpid::sys::Duration getEventsTimeout,
                 //const qpid::sys::Duration flushTimeout,
                 qpid::management::ManagementAgent* agent,
