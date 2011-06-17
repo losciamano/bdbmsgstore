@@ -81,6 +81,7 @@ JournalImpl::JournalImpl(/*qpid::sys::Timer& timer_,*/
                          journalDirectory(journalDirectory),
                          bdbDir(bdbDir),
 			 num_jfiles(num_jfiles),
+			 create_bdb(true),
                          _agent(a),
                          _mgmtObject(0),
                          deleteCallback(onDelete),
@@ -114,12 +115,15 @@ JournalImpl::JournalImpl(/*qpid::sys::Timer& timer_,*/
     }
     std::ostringstream oss;
     oss <<  "Created ";
-    oss << "Journal directory = \"" << journalDirectory << "\"; Bdb Directory = \"" << bdbDir << "\"; Num JFiles : "<<num_jfiles<<"";
     if (!create_bdb)
     {
     	oss << "No bdb created : Dummy Journal";
     }
     log(LOG_NOTICE, oss.str());
+
+    std::stringstream logline;
+    logline <<"Journal directory = \"" << journalDirectory << "\"; Bdb Directory = \"" << bdbDir << "\"; Num JFiles : "<<num_jfiles;
+    log(LOG_DEBUG,logline.str());
 }
 
 JournalImpl::~JournalImpl()

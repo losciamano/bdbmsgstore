@@ -1558,7 +1558,7 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 	    		if (highestRid == 0ULL)
 			        highestRid = thisHighestRid;
 		        else if (thisHighestRid - highestRid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
-		                highestRid = thisLastPid;
+		                highestRid = thisHighestRid;
 	    		if (localLastPid == 0ULL)
 			        localLastPid = thisLastPid;
 		        else if (thisLastPid - localLastPid < 0x8000000000000000ULL) // RFC 1982 comparison for unsigned 64-bit
@@ -1624,6 +1624,7 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 					adit->second.erase(adsubit);
 					if (adit->second.empty()) adset.erase(adit);
 					it->second.erase(iit++);
+					cout<< "[USELESS] #"<<pae.msgId<<","<<pae.queueId<<endl;
 					uselessList.push_back(pae.opId());					
 				} else 
 				{
@@ -1941,6 +1942,7 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 		PendingDequeueSet::iterator adit;
 		PendingDequeueSubset::iterator adsubit;
 		jc->recoverMessages(recovered);
+		QPID_LOG(info,"Read "<<recovered.size()<<" msgs from "<<queue->getName()<< " journal");
 		std::vector<PendingOperationId> transient_async; //Delete only from enq
 		std::vector<PendingOperationId> useless_async; //Delete from both enq and deq
 		std::vector<PendingOperationId> dequeue_completed_async; //Delete only from deq
@@ -1965,7 +1967,7 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 						mit->second.erase(msubit++);
 						dmi->second.erase(dmsubit);
 						if (dmi->second.empty()) adset->erase(dmi);
-						asyncAcceptedMsg.push_back(pae.msgId);
+						//asyncAcceptedMsg.push_back(pae.msgId); //This push_back has no meaning !
 						report.aacnt++;
 					} else
 					{
@@ -2026,6 +2028,17 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 			u_int8_t transientFlag=msgBuff.getOctet();
 			if (!transientFlag)
 			{
+				MessageIdSet::iterator mxIt = penq_recovered.find(pao.msgId);
+				bool ape_recovered=false;
+				if (mxIt!=penq_recovered.end())
+				{
+					penq_recovered.erase(mxIt++);
+					ape_recovered=true;
+				} else 
+				{
+					lastPid=max(pao.msgId,lastPid);
+				}
+				maxRid=max(pao.msgId,maxRid);
 				u_int32_t headerSize=msgBuff.getLong();
 				qpid::framing::Buffer headerBuff(msgBuff.getPointer()+preambleLength,headerSize);
 				bool toRecover=true;
@@ -2069,11 +2082,11 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 										{
 											dnf=true;
 										}
-										if (dnf) transient_async.push_back(opid);
 									} else 
 									{
 										dnf=true;
 									}
+									if (dnf) transient_async.push_back(opid);
 								} else 
 								{
 									enf=true;
@@ -2114,17 +2127,6 @@ uint64_t BdbStoreProvider::decodeAndRecoverMsg(qpid::broker::RecoveryManager& re
 						toRecover=false;
 					}
 				}
-				MessageIdSet::iterator mxIt = penq_recovered.find(pao.msgId);
-				bool ape_recovered=false;
-				if (mxIt!=penq_recovered.end())
-				{
-					penq_recovered.erase(mxIt++);
-					ape_recovered=true;
-				} else 
-				{
-					lastPid=max(pao.msgId,lastPid);
-				}
-				maxRid=max(pao.msgId,maxRid);
 				if (toRecover) 
 				{
 					msg = recovery.recoverMessage(headerBuff);

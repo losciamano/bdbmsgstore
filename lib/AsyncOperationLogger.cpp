@@ -498,6 +498,7 @@ void AsyncOperationLogger::extractPendingDequeueFromFile(PendingDequeueSet& adse
 							PendingOperationId opid(pid,qid);
 							mapit = lostSet.find(qid);
 							notFound=true;
+							//cout<<"[D] <== "<<pid<<","<<qid<<endl;
 							if (mapit!=lostSet.end())
 							{
 								mapsubit = mapit->second.find(pid);
@@ -545,6 +546,7 @@ void AsyncOperationLogger::extractPendingDequeueFromFile(PendingDequeueSet& adse
 							PendingOperationId opid(pid,qid);
 							outit = adset.find(qid);
 							notFound=true;
+							//cout<<"[D] ==> "<<pid<<","<<qid<<endl;
 							if (outit!=adset.end()) 
 							{
 								outsubit = outit->second.find(pid);
@@ -637,6 +639,7 @@ void AsyncOperationLogger::extractPendingEnqueueFromFile(PendingEnqueueSet& aese
 							PendingAsyncEnqueue pae(pid,qid,transientFlag);
 							pae.size=size;
 							pae.buff=std::vector<char>(size);
+							//cout<<"[E] <== "<<pid<<","<<qid<<endl;
 							infile.read(&pae.buff[0],size);							
 							if (!infile.fail()) 
 							{
@@ -687,6 +690,7 @@ void AsyncOperationLogger::extractPendingEnqueueFromFile(PendingEnqueueSet& aese
 							memcpy(&qid,&completebuff[buffindex],sizeof(uint64_t));
 							PendingOperationId opid(pid,qid);
 							notFound=true;
+							//cout<<"[E] ==> "<<pid<<","<<qid<<endl;
 							outit = aeset.find(qid);
 							if (outit!=aeset.end()) 
 							{
