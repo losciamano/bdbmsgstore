@@ -55,8 +55,11 @@ class PidTracker
 		boost::mutex pendMutex;
 		QMMap pendMap;
 		PidRecord mainRecord;
+		boost::shared_mutex stopMutex;
+		bool stopped;
 	public :
-		PidTracker()
+		PidTracker():
+			stopped(false)
 		{}
 		~PidTracker()
 		{
@@ -75,6 +78,7 @@ class PidTracker
 		bool willEnqueue(uint64_t pid,uint64_t qid);
 		bool dequeueCheck(uint64_t pid,uint64_t qid);
 		bool enqueueCheck(uint64_t pid,uint64_t qid);
+		void stop();
 };
 
 }}} //namespace qpid::store::bdb

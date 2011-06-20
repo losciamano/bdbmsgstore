@@ -241,14 +241,26 @@ int AsyncOperationLogger::log_enqueue_start(uint64_t pid,uint64_t qid,vector<cha
 {
 	int retIndex=0;
 	{
+		boost::posix_time::ptime start= boost::posix_time::microsec_clock::local_time();
+		boost::posix_time::ptime startlock= boost::posix_time::microsec_clock::local_time();
 		boost::mutex::scoped_lock lock(this->enqueueMutex);
+		boost::posix_time::time_duration difflock = boost::posix_time::time_period(startlock,boost::posix_time::microsec_clock::local_time()).length();
+		boost::posix_time::ptime startfile= boost::posix_time::microsec_clock::local_time();
 		if (log_enqueue_start_on_file(pid,qid,buff,buffsize,transient,&this->enqueueFile,this->enqDataPreambleBuff)==0)
 		{
 			retIndex=this->enqueueFileIndex;
 		} else {
 			retIndex=-1;
 		}
-			
+		boost::posix_time::time_duration difffile = boost::posix_time::time_period(startfile,boost::posix_time::microsec_clock::local_time()).length();
+		boost::posix_time::time_duration diff = boost::posix_time::time_period(start,boost::posix_time::microsec_clock::local_time()).length();
+		/*if (diff.total_milliseconds()>10)
+		{
+			cout<<endl<<"[ALOG-ES] Total: "<<diff.total_milliseconds()<<"ms; Acquiring Lock: "<<difflock.total_milliseconds()<<"ms; Log To File: "<<difffile.total_milliseconds()<<"ms"<<endl;
+		} else
+		{
+			std::cout<<".";
+		}*/
 	}
 	return retIndex;
 }
@@ -759,7 +771,8 @@ int AsyncOperationLogger::log_enqueue_start_on_file(uint64_t pid,
 	memcpy(&wbuff[buffindex],&buffsize,sizeof(uint64_t));//Message Size
 	buffindex+=char_for_lluint;
 	wbuff[buffindex]=(transient?0x1:0x0);
-	try {
+	try 
+	{
 		logFile->write(wbuff,this->enqDataPreambleSize);
 		logFile->write(&buff[0],buffsize);
 		logFile->flush();

@@ -425,6 +425,7 @@ class BdbStoreProvider : public qpid::store::StorageProvider, public qpid::manag
 	boost::shared_ptr<boost::thread> enqLogCleanerThread;
 	boost::shared_ptr<boost::thread> deqLogCleanerThread;
 	qpid::broker::Broker* broker;
+	bool finalized;
 
 	/**
 	*	Default store directory
@@ -627,13 +628,14 @@ BdbStoreProvider::BdbStoreProvider() : 	highestRid(0),
 				num_thread_enqueue(2),
 				num_thread_dequeue(2),
 				lastPid(0),
-				agent(0)
+				agent(0),
+				finalized(false)
 {
 }
 
 BdbStoreProvider::~BdbStoreProvider()
 {
-	finalizeMe();
+	if (!finalized) finalizeMe();
 	try 
 	{
 		closeDbs();
@@ -830,28 +832,35 @@ void BdbStoreProvider::truncateInit(const bool /*pushDownStoreFiles*/)
 }
 void BdbStoreProvider::finalizeMe()
 {
+	cout<<"Start finilize"<<endl;
+	tracker.stop();
 	enqueuePool.clear();
 	dequeuePool.clear();
 	enqueuePool.wait(0);
+	cout<<"EPool done!"<<endl;
 	dequeuePool.wait(0);
+	cout<<"DPool done!"<<endl;
 	if (enqLogCleanerThread.get())
 	{
 		enqLogCleanerThread->interrupt();
 		enqLogCleanerThread->join();
 		enqLogCleanerThread.reset();
 	}
+	cout<<"ECleaner done!"<<endl;
 	if (deqLogCleanerThread.get())
 	{
 		deqLogCleanerThread->interrupt();
 		deqLogCleanerThread->join();
 		deqLogCleanerThread.reset();
 	}
+	cout<<"DCleaner done!"<<endl;
 	if (eraserThread.get())
 	{
 		eraserThread->interrupt();
 		eraserThread->join();
 		eraserThread.reset();
 	}
+	cout<<"Eraser done!"<<endl;
 	{
 		qpid::sys::Mutex::ScopedLock sl(journalListLock);
 		for (JournalListMapItr i = journalList.begin(); i != journalList.end(); )
@@ -865,6 +874,7 @@ void BdbStoreProvider::finalizeMe()
 			journalList.erase(i++);
 		}
 	}
+	cout<<"Journal Cleaned !"<<endl;
 	if (aologger)
 	{
 		delete aologger;
@@ -872,6 +882,8 @@ void BdbStoreProvider::finalizeMe()
 	}
 	acceptedFromMongo.clear();
 	recoveredJournal.clear();
+	cout<<"Finalize done !"<<endl;
+	finalized=true;
 }
 
 void BdbStoreProvider::initManagement ()
@@ -1230,7 +1242,11 @@ void BdbStoreProvider::loadContent(const qpid::broker::PersistableQueue& queue,
 	{
     		//QPID_LOG(warning,"Start loading content "+boost::lexical_cast<std::string>(messageId)+" from "+queue.getName());
 		QPID_LOG(debug,"Wait for "<<messageId << " on "<<queueId);
-		tracker.waitForPid(messageId,queueId);
+		int waitResp=0;
+		while ((waitResp=tracker.waitForPid(messageId,queueId))<0)
+		{
+			if (waitResp==-2) return;
+		}
 	        try 
 		{
         		JournalImpl* jc = static_cast<JournalImpl*>(queue.getExternalQueueStore());
@@ -1302,9 +1318,9 @@ void BdbStoreProvider::enqueue(qpid::broker::TransactionContext* ctxt,
 	}
 	msg->enqueueComplete();
 	boost::posix_time::time_duration diff = boost::posix_time::time_period(start,boost::posix_time::microsec_clock::local_time()).length();
-	if (diff.total_milliseconds()>100) {
-		cout<<"[E] Too late !"<<diff.total_milliseconds()<<endl;
-	}
+	//if (diff.total_milliseconds()>100) {
+		//cout<<"[E] Too late !"<<diff.total_milliseconds()<<endl;
+	//}
 	QPID_LOG(debug,"enqueue "+boost::lexical_cast<std::string>(messageId)+" from "+queue.getName()+" ; Duration : "+boost::lexical_cast<std::string>(diff.total_milliseconds())+" msec");
 }
 
@@ -1342,12 +1358,13 @@ void BdbStoreProvider::dequeue(qpid::broker::TransactionContext* ctxt,
 		}
 	} else
 	{
+		aologger->log_enqueue_complete(messageId,queueId);
 		if (this->mgmtObject) this->mgmtObject->inc_skippedDequeue();
 	}
 	boost::posix_time::time_duration diff = boost::posix_time::time_period(start,boost::posix_time::microsec_clock::local_time()).length();
-	if (diff.total_milliseconds()>100) {
-		cout<<"[D] Too late !"<<diff.total_milliseconds()<<endl;
-	}
+	//if (diff.total_milliseconds()>100) {
+		//cout<<"[D] Too late !"<<diff.total_milliseconds()<<endl;
+	//}
 
     	msg->dequeueComplete();
 }
@@ -1898,7 +1915,18 @@ void BdbStoreProvider::async_dequeue(uint64_t msgId,
 	std::string tid; //Empty Transaction Id 'cause transactions are not supported!
     	try 
 	{
-		tracker.waitForPid(msgId,jc->pid());		
+		int waitResp = tracker.waitForPid(msgId,jc->pid());
+		switch (waitResp)
+		{
+			case -1:
+				if(!dequeuePool.schedule(boost::bind(&BdbStoreProvider::async_dequeue,this,msgId,jc))) 
+				{
+					THROW_STORE_EXCEPTION("Unable to redispatch the dequeue!");
+				}
+				return;
+			case -2:
+				return;
+		}
 		/******************************************************/
 		//cout << "Dequeue of #"<<msgId<<" from "<<jc->id()<<"("<<jc->pid()<<")"<<endl;
         	jc->dequeue_data(msgId, tid,false);

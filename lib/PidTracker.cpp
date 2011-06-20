@@ -94,6 +94,12 @@ int PidTracker::waitForPid(uint64_t pid,uint64_t qid)
 				if (sit != mit->second.end())
 				{
 					duplicateNotEnqueued.wait(lock);
+					boost::shared_lock<boost::shared_mutex> sh_lock(stopMutex);
+					if (stopped)
+					{
+						return -2;
+					}
+					sh_lock.unlock();
 					notNow=true;
 					try_count++;
 				} else
@@ -103,6 +109,10 @@ int PidTracker::waitForPid(uint64_t pid,uint64_t qid)
 			} else {
 				notNow=false;
 			}
+			if (try_count>100)	
+			{
+				return -1;
+			}
 		}
 	}
 	{
@@ -111,6 +121,17 @@ int PidTracker::waitForPid(uint64_t pid,uint64_t qid)
 		{
 			mainRecord.notYetEnqueued.wait(lock);
 			try_count++;
+			boost::shared_lock<boost::shared_mutex> sh_lock(stopMutex);
+			if (stopped)
+			{
+				return -2;
+			}
+			sh_lock.unlock();
+
+			if (try_count>100)
+			{
+				return -1;
+			}
 		}
 	}
 	return try_count;
@@ -183,4 +204,15 @@ bool PidTracker::enqueueCheck(uint64_t pid,uint64_t qid)
 			return false; //Enqueue not required (a dequeue has been requested)
 		}
 	}
+}
+
+void PidTracker::stop()
+{
+	{
+		boost::upgrade_lock<boost::shared_mutex> lock(stopMutex);
+		boost::upgrade_to_unique_lock<boost::shared_mutex> uLock(lock);
+		stopped=true;
+	}
+	mainRecord.notYetEnqueued.notify_all();
+	duplicateNotEnqueued.notify_all();
 }
