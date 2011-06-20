@@ -832,35 +832,29 @@ void BdbStoreProvider::truncateInit(const bool /*pushDownStoreFiles*/)
 }
 void BdbStoreProvider::finalizeMe()
 {
-	cout<<"Start finilize"<<endl;
 	tracker.stop();
 	enqueuePool.clear();
 	dequeuePool.clear();
 	enqueuePool.wait(0);
-	cout<<"EPool done!"<<endl;
 	dequeuePool.wait(0);
-	cout<<"DPool done!"<<endl;
 	if (enqLogCleanerThread.get())
 	{
 		enqLogCleanerThread->interrupt();
 		enqLogCleanerThread->join();
 		enqLogCleanerThread.reset();
 	}
-	cout<<"ECleaner done!"<<endl;
 	if (deqLogCleanerThread.get())
 	{
 		deqLogCleanerThread->interrupt();
 		deqLogCleanerThread->join();
 		deqLogCleanerThread.reset();
 	}
-	cout<<"DCleaner done!"<<endl;
 	if (eraserThread.get())
 	{
 		eraserThread->interrupt();
 		eraserThread->join();
 		eraserThread.reset();
 	}
-	cout<<"Eraser done!"<<endl;
 	{
 		qpid::sys::Mutex::ScopedLock sl(journalListLock);
 		for (JournalListMapItr i = journalList.begin(); i != journalList.end(); )
@@ -874,7 +868,6 @@ void BdbStoreProvider::finalizeMe()
 			journalList.erase(i++);
 		}
 	}
-	cout<<"Journal Cleaned !"<<endl;
 	if (aologger)
 	{
 		delete aologger;
@@ -882,8 +875,8 @@ void BdbStoreProvider::finalizeMe()
 	}
 	acceptedFromMongo.clear();
 	recoveredJournal.clear();
-	cout<<"Finalize done !"<<endl;
 	finalized=true;
+	QPID_LOG(notice,"Berkeley Db Storage provider Finalize.");
 }
 
 void BdbStoreProvider::initManagement ()
@@ -1641,7 +1634,6 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 					adit->second.erase(adsubit);
 					if (adit->second.empty()) adset.erase(adit);
 					it->second.erase(iit++);
-					cout<< "[USELESS] #"<<pae.msgId<<","<<pae.queueId<<endl;
 					uselessList.push_back(pae.opId());					
 				} else 
 				{
