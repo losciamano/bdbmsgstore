@@ -170,10 +170,12 @@ AC_MSG_RESULT([$enable_CLUSTER_TESTS])
 
 AC_CHECK_LIB([boost_thread],[main])
 AC_LANG(C++)
-libmongo_fail=0
-AC_CHECK_LIB([mongoclient],[_ZN5mongo11initLoggingERKSsb],,[libmongo_fail=1])
-test $libmongo_fail == 1 && \
- AC_MSG_ERROR([mongoclient library missing. Please get it !])
+
+#Removed mongo dependecy
+#libmongo_fail=0
+#AC_CHECK_LIB([mongoclient],[_ZN5mongo11initLoggingERKSsb],,[libmongo_fail=1])
+#test $libmongo_fail == 1 && \
+# AC_MSG_ERROR([mongoclient library missing. Please get it !])
 
 
 # For libraries (libcommon) that use dlopen, dlerror, etc.,

@@ -19,9 +19,9 @@
 #include "JournalImpl.h"
 #include "BindingDbt.h"
 #include "Cursor.h"
-#include "mongo/client/dbclient.h"
-#include "mongo/bson/util/builder.h"
-#include "mongo/client/connpool.h"
+//#include "mongo/client/dbclient.h"
+//#include "mongo/bson/util/builder.h"
+//#include "mongo/client/connpool.h"
 #include <unistd.h>
 #include <sys/types.h>
 #include <pwd.h>
@@ -35,6 +35,7 @@
 
 using namespace mrg::msgstore;
 using namespace qpid::broker;
+using namespace std;
 namespace _qmf = qmf::com::atono::server::qpid::bdbstore;
 
 namespace qpid{
@@ -1448,7 +1449,7 @@ void BdbStoreProvider::recoverQueues(qpid::broker::RecoveryManager& recoverer,
 {
 	Cursor queues;
     	queues.open(queueDb, 0x0);
-    	if (this->options.enableAcceptRecoveryFlag) //Check if enable_accept_recover is true			
+    	/*if (this->options.enableAcceptRecoveryFlag) //Check if enable_accept_recover is true			
 	{
 		std::string collection=this->options.acceptRecoveryMongoDb+"."+this->options.acceptRecoveryMongoCollection;
 		std::string mongo_addr=this->options.acceptRecoveryMongoHost + ":" + this->options.acceptRecoveryMongoPort;
@@ -1461,7 +1462,7 @@ void BdbStoreProvider::recoverQueues(qpid::broker::RecoveryManager& recoverer,
 			acceptedFromMongo.push_back(std::string(cursor->next().getStringField("UID")));
 	    	}
 	    	con->done();
-	}
+	}*/
     	u_int64_t maxQueueId(1);
 
 	IdDbt key;
@@ -1582,7 +1583,7 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
         	}		
 
 	}
-	if (this->options.enableAcceptRecoveryFlag) { //Check if enable_accept_recover is true			
+	/*if (this->options.enableAcceptRecoveryFlag) { //Check if enable_accept_recover is true			
 	    	string collection=this->options.acceptRecoveryMongoDb+"."+this->options.acceptRecoveryMongoCollection;
 	    	string mongo_addr=this->options.acceptRecoveryMongoHost + ":" + this->options.acceptRecoveryMongoPort;
 	    	boost::shared_ptr<mongo::ScopedDbConnection> con = boost::shared_ptr<mongo::ScopedDbConnection>(new mongo::ScopedDbConnection(mongo_addr));
@@ -1593,7 +1594,7 @@ void BdbStoreProvider::recoverMessages(qpid::broker::RecoveryManager& recoverer,
 	    		c->remove(collection,BSON("UID"<<*acIt));
 	    	}
 	    	con->done();
-   	}
+   	}*/
 	for (std::list<qpid::broker::RecoverableQueue::shared_ptr>::iterator it=recoveredJournal.begin();it !=recoveredJournal.end();it++) 
 	{
 		JournalImpl* jc = static_cast<JournalImpl*>((*it)->getExternalQueueStore());
